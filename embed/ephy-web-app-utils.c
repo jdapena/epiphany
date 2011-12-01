@@ -180,16 +180,21 @@ out:
 
 #define EPHY_TOOLBARS_XML_FILE "epiphany-toolbars-3.xml"
 
+
 static char *
-create_desktop_file (const char *address,
-                     const char *profile_dir,
-                     const char *title,
-                     GdkPixbuf *icon)
+create_desktop_and_metadata_files (const char *address,
+                                   const char *profile_dir,
+                                   const char *title,
+                                   GdkPixbuf *icon)
 {
-  GKeyFile *file = NULL;
-  char *exec_string;
+  GKeyFile *desktop_file = NULL;
+  GKeyFile *metadata_file = NULL;
+  char *exec_string = NULL;
+  char *origin;
+  char *launch_path;
+  SoupURI *uri = NULL, *host_uri = NULL;
   char *data = NULL;
-  char *filename, *apps_path, *desktop_file_path = NULL;
+  char *filename, *apps_path, *file_path = NULL;
   char *link_path;
   char *wm_class;
   GFile *link;
@@ -198,21 +203,36 @@ create_desktop_file (const char *address,
   g_return_val_if_fail (profile_dir, NULL);
 
   wm_class = get_wm_class_from_app_title (title);
-  filename = desktop_filename_from_wm_class (wm_class);
 
-  if (!filename)
+  if (!wm_class)
     goto out;
 
-  file = g_key_file_new ();
-  g_key_file_set_value (file, "Desktop Entry", "Name", title);
+  desktop_file = g_key_file_new ();
+  metadata_file = g_key_file_new ();
+  
+  g_key_file_set_value (desktop_file, "Desktop Entry", "Name", title);
+  g_key_file_set_value (metadata_file, "Application", "Name", title);
+
   exec_string = g_strdup_printf ("epiphany --application-mode --profile=\"%s\" %s",
                                  profile_dir,
                                  address);
-  g_key_file_set_value (file, "Desktop Entry", "Exec", exec_string);
+  g_key_file_set_value (desktop_file, "Desktop Entry", "Exec", exec_string);
   g_free (exec_string);
-  g_key_file_set_value (file, "Desktop Entry", "StartupNotify", "true");
-  g_key_file_set_value (file, "Desktop Entry", "Terminal", "false");
-  g_key_file_set_value (file, "Desktop Entry", "Type", "Application");
+
+  uri = soup_uri_new (address);
+  launch_path = soup_uri_to_string (uri, TRUE);
+  g_key_file_set_value (metadata_file, "Application", "LaunchPath", launch_path);
+  g_free (launch_path);
+  host_uri = soup_uri_copy_host (uri);
+  origin = soup_uri_to_string (host_uri, FALSE);
+  g_key_file_set_value (metadata_file, "Application", "Origin", origin);
+  g_free (origin);
+  soup_uri_free (uri);
+  soup_uri_free (host_uri);
+
+  g_key_file_set_value (desktop_file, "Desktop Entry", "StartupNotify", "true");
+  g_key_file_set_value (desktop_file, "Desktop Entry", "Terminal", "false");
+  g_key_file_set_value (desktop_file, "Desktop Entry", "Type", "Application");
 
   if (icon) {
     GOutputStream *stream;
@@ -224,21 +244,34 @@ create_desktop_file (const char *address,
 
     stream = (GOutputStream*)g_file_create (image, 0, NULL, NULL);
     gdk_pixbuf_save_to_stream (icon, stream, "png", NULL, NULL, NULL);
-    g_key_file_set_value (file, "Desktop Entry", "Icon", path);
+    g_key_file_set_value (desktop_file, "Desktop Entry", "Icon", path);
+    g_key_file_set_value (metadata_file, "Application", "Icon", path);
 
     g_object_unref (stream);
     g_object_unref (image);
     g_free (path);
   }
 
-  g_key_file_set_value (file, "Desktop Entry", "StartupWMClass", wm_class);
-  data = g_key_file_to_data (file, NULL, NULL);
+  g_key_file_set_value (desktop_file, "Desktop Entry", "StartupWMClass", wm_class);
 
-  desktop_file_path = g_build_filename (profile_dir, filename, NULL);
+  data = g_key_file_to_data (metadata_file, NULL, NULL);
+  filename = g_strconcat (wm_class, ".metadata", NULL);
+  file_path = g_build_filename (profile_dir, filename, NULL);
+  g_key_file_free (metadata_file);
 
-  if (!g_file_set_contents (desktop_file_path, data, -1, NULL)) {
-    g_free (desktop_file_path);
-    desktop_file_path = NULL;
+  g_file_set_contents (file_path, data, -1, NULL);
+  g_free (file_path);
+  g_free (data);
+
+  data = g_key_file_to_data (desktop_file, NULL, NULL);
+  filename = g_strconcat (wm_class, ".desktop", NULL);
+  g_free (wm_class);
+  file_path = g_build_filename (profile_dir, filename, NULL);
+  g_key_file_free (desktop_file);
+
+  if (!g_file_set_contents (file_path, data, -1, NULL)) {
+    g_free (file_path);
+    file_path = NULL;
   }
 
   /* Create a symlink in XDG_DATA_DIR/applications for the Shell to
@@ -248,7 +281,7 @@ create_desktop_file (const char *address,
     link_path = g_build_filename (apps_path, filename, NULL);
     link = g_file_new_for_path (link_path);
     g_free (link_path);
-    g_file_make_symbolic_link (link, desktop_file_path, NULL, NULL);
+    g_file_make_symbolic_link (link, file_path, NULL, NULL);
     g_object_unref (link);
   } else {
     g_warning ("Error creating application symlink: %s", error->message);
@@ -260,9 +293,10 @@ create_desktop_file (const char *address,
 out:
   g_free (wm_class);
   g_free (data);
-  g_key_file_free (file);
+  g_key_file_free (desktop_file);
+  g_key_file_free (metadata_file);
 
-  return desktop_file_path;
+  return file_path;
 }
 
 static void
@@ -342,7 +376,7 @@ ephy_web_application_create (const char *address, const char *name, GdkPixbuf *i
   create_cookie_jar_for_domain (address, profile_dir);
 
   /* Create the deskop file. */
-  desktop_file_path = create_desktop_file (address, profile_dir, name, icon);
+  desktop_file_path = create_desktop_and_metadata_files (address, profile_dir, name, icon);
 
 out:
   if (toolbar_path)
