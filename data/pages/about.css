@@ -126,10 +126,12 @@ body {
 
 .applications-body p { margin-bottom: 30px; }
 .applications-body td { padding: 15px 15px;}
-.applications-body td.icon { width: 64px; }
-.applications-body td.datas { width: 200px; }
-.applications-body td.input { width: 64px; }
-.applications-body td.date { width: auto; text-align: right; font-style: italic; font-size: small; }
-.applications-body .appname { font-weight: bold; }
-.applications-body .appurl, td.date { color: #babdb6; }
-.applications-body input { width: 100%; padding: 8px; }
+.applications-body td.icon { width: 64px; vertical-align: text-top; }
+.applications-body td.data { width: auto; vertical-align: top; text-align: justify; }
+.applications-body td.input { width: 64px; margin-right: 0; vertical-align: middle; }
+.applications-body .appname { font-weight: bold; vertical-align: top; }
+.applications-body .applaunchpath { color: #d3d7cf; vertical-align: top; }
+.applications-body .apporigin { color: #babdb6; vertical-align: top; }
+.applications-body .appdate { color: #babdb6; vertical-align: top; font-size: small; }
+.applications-body .appdescription { font-size: small; text-align: justify; vertical-align: top; }
+.applications-body input { width: 100%; padding: 8px; vertical-align: bottom; }

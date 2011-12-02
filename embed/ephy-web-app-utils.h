@@ -32,7 +32,9 @@ G_BEGIN_DECLS
 typedef struct {
     char *name;
     char *icon_url;
-    char *url;
+    char *origin;
+    char *description;
+    char *launch_path;
     char install_date[128];
 } EphyWebApplication;
 

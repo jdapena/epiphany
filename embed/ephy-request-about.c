@@ -189,10 +189,13 @@ ephy_request_about_send (SoupRequest          *request,
       if (g_file_get_contents (app->icon_url, &img_data, &data_length, NULL))
         img_data_base64 = g_base64_encode ((guchar*)img_data, data_length);
       g_string_append_printf (data_str, "<tbody><tr><td class=\"icon\"><img width=64 height=64 src=\"data:image/png;base64,%s\">" \
-                              " </img></td><td class=\"data\"><div class=\"appname\">%s</div><div class=\"appurl\">%s</div></td><td class=\"input\"><input type=\"submit\" value=\"Delete\" id=\"%s\"></td><td class=\"date\">%s <br /> %s</td></tr>",
-                              img_data_base64, app->name, app->url, app->name,
+                              " </img></td><td class=\"data\"><div class=\"appname\">%s</div><div class=\"appurl\"><span class=\"apporigin\">%s</span><span class=\"applaunchpath\">%s</span></div><div class=\"appdescription\">%s</div><div class=\"appdate\">%s %s</div></td><td class=\"input\"><input type=\"submit\" value=\"Delete\" id=\"%s\"></td></tr>",
+                              img_data_base64, 
+                              app->name?app->name:"", app->origin?app->origin:"",
+                              app->launch_path?app->launch_path:"", app->description?app->description:"",
                               /* Note for translators: this refers to the installation date. */
-                              _("Installed on:"), app->install_date);
+                              _("Installed on:"), app->install_date,
+                              app->name?app->name:"");
       g_free (img_data_base64);
       g_free (img_data);
     }

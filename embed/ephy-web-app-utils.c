@@ -422,42 +422,35 @@ ephy_web_application_get_application_list ()
       char *profile_dir;
       guint64 created;
       GDate *date;
-      char *desktop_file, *desktop_file_path;
+      char *metadata_file, *metadata_file_path;
       char *contents;
-      GFileInfo *desktop_info;
+      GFileInfo *metadata_info;
+      GFile *file;
 
       app = g_slice_new0 (EphyWebApplication);
 
       profile_dir = g_build_filename (ephy_dot_dir (), name, NULL);
       app->icon_url = g_build_filename (profile_dir, EPHY_WEB_APP_ICON_NAME, NULL);
 
-      desktop_file = g_strconcat (name + prefix_length, ".desktop", NULL);
-      desktop_file_path = g_build_filename (profile_dir, desktop_file, NULL);
-      if (g_file_get_contents (desktop_file_path, &contents, NULL, NULL)) {
-        char *exec;
-        char **strings;
+      metadata_file = g_strconcat (name + prefix_length, ".metadata", NULL);
+      metadata_file_path = g_build_filename (profile_dir, metadata_file, NULL);
+      if (g_file_get_contents (metadata_file_path, &contents, NULL, NULL)) {
         GKeyFile *key;
-        int i;
-        GFile *file;
 
         key = g_key_file_new ();
         g_key_file_load_from_data (key, contents, -1, 0, NULL);
-        app->name = g_key_file_get_string (key, "Desktop Entry", "Name", NULL);
-        exec = g_key_file_get_string (key, "Desktop Entry", "Exec", NULL);
-        strings = g_strsplit (exec, " ", -1);
+        app->name = g_key_file_get_string (key, "Application", "Name", NULL);
+        app->origin = g_key_file_get_string (key, "Application", "Origin", NULL);
+        app->launch_path = g_key_file_get_string (key, "Application", "LaunchPath", NULL);
+        app->description = g_key_file_get_string (key, "Application", "Description", NULL);
 
-        for (i = 0; strings[i]; i++);
-        app->url = g_strdup (strings[i - 1]);
-
-        g_strfreev (strings);
-        g_free (exec);
         g_key_file_free (key);
 
-        file = g_file_new_for_path (desktop_file_path);
+        file = g_file_new_for_path (metadata_file_path);
 
         /* FIXME: this should use TIME_CREATED but it does not seem to be working. */
-        desktop_info = g_file_query_info (file, G_FILE_ATTRIBUTE_TIME_MODIFIED, 0, NULL, NULL);
-        created = g_file_info_get_attribute_uint64 (desktop_info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
+        metadata_info = g_file_query_info (file, G_FILE_ATTRIBUTE_TIME_MODIFIED, 0, NULL, NULL);
+        created = g_file_info_get_attribute_uint64 (metadata_info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
 
         date = g_date_new ();
         g_date_set_time_t (date, (time_t)created);
@@ -465,15 +458,16 @@ ephy_web_application_get_application_list ()
 
         g_date_free (date);
         g_object_unref (file);
-        g_object_unref (desktop_info);
+        g_object_unref (metadata_info);
 
         applications = g_list_append (applications, app);
       }
 
       g_free (contents);
-      g_free (desktop_file);
+      g_free (metadata_file);
       g_free (profile_dir);
-      g_free (desktop_file_path);
+      g_free (metadata_file_path);
+
     }
 
     g_object_unref (info);
@@ -491,7 +485,8 @@ ephy_web_application_free (EphyWebApplication *app)
 {
   g_free (app->name);
   g_free (app->icon_url);
-  g_free (app->url);
+  g_free (app->origin);
+  g_free (app->launch_path);
   g_slice_free (EphyWebApplication, app);
 }
 
