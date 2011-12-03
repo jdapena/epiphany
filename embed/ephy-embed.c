@@ -475,6 +475,16 @@ ephy_embed_auto_download_url (EphyEmbed *embed, const char *url)
   ephy_download_set_action (download, EPHY_DOWNLOAD_ACTION_OPEN);
 }
 
+static void
+app_manifest_available_cb (EphyDownload *download,
+                           char *origin,
+                           char *destination_path,
+                           EphyEmbed *embed)
+{
+  
+}
+
+
 static gboolean
 download_requested_cb (WebKitWebView *web_view,
                        WebKitDownload *download,
@@ -493,6 +503,9 @@ download_requested_cb (WebKitWebView *web_view,
   ed = ephy_download_new_for_download (download);
   ephy_download_set_window (ed, window);
   ephy_download_set_auto_destination (ed);
+
+  g_signal_connect (G_OBJECT (ed), "app-manifest-available",
+                    G_CALLBACK (app_manifest_available_cb), embed);
 
   return TRUE;
 }

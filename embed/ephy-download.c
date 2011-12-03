@@ -863,6 +863,22 @@ ephy_download_class_init (EphyDownloadClass *klass)
                 g_cclosure_marshal_generic,
                 G_TYPE_NONE,
                 0);
+  /**
+   * EphyDownload::app-manifest-available:
+   *
+   * The ::app-manifest-available is emitted when a manifest
+   * is ready to be installed.
+   **/
+  g_signal_new ("app-manifest-available",
+                G_OBJECT_CLASS_TYPE (object_class),
+                G_SIGNAL_RUN_LAST,
+                G_STRUCT_OFFSET (EphyDownloadClass, app_manifest_available),
+                NULL, NULL,
+                g_cclosure_marshal_generic,
+                G_TYPE_NONE,
+                2,
+                G_TYPE_STRING,
+                G_TYPE_STRING);
 }
 
 static void
@@ -896,12 +912,43 @@ download_status_changed_cb (GObject *object,
   status = webkit_download_get_status (priv->download);
 
   if (status == WEBKIT_DOWNLOAD_STATUS_FINISHED) {
-    g_signal_emit_by_name (download, "completed");
+    WebKitDownload *webkit_download;
+    WebKitNetworkResponse *response;
+    SoupMessage *message;
+    bool is_webapp = FALSE;
 
-    if (g_settings_get_boolean (EPHY_SETTINGS_MAIN, EPHY_PREFS_AUTO_DOWNLOADS)) {
-      ephy_download_do_download_action (download, EPHY_DOWNLOAD_ACTION_AUTO);
-    } else {
-      ephy_download_do_download_action (download, EPHY_DOWNLOAD_ACTION_NONE);
+    g_signal_emit_by_name (download, "completed");
+    webkit_download = ephy_download_get_webkit_download (download);
+    
+    response = webkit_download_get_network_response (webkit_download);
+    message = webkit_network_response_get_message (response);
+
+    if (message) {
+      const char *content_type = soup_message_headers_get_content_type (message->response_headers, NULL);
+
+      if (content_type && !strcmp (content_type, "application/x-web-app-manifest+json")) {
+        // We need the host for processing a mozilla manifest
+        SoupURI *uri, *origin_uri;
+        char *origin;
+
+        uri = soup_uri_new (webkit_download_get_uri (priv->download));
+        origin_uri = soup_uri_copy_host (uri);
+
+        origin = soup_uri_to_string (origin_uri, FALSE);
+
+        g_signal_emit_by_name (download, "app-manifest-available", origin, priv->destination);
+
+        soup_uri_free (uri);
+        soup_uri_free (origin_uri);
+        is_webapp = TRUE;
+      }
+    }
+    if (!is_webapp) {
+      if (g_settings_get_boolean (EPHY_SETTINGS_MAIN, EPHY_PREFS_AUTO_DOWNLOADS)) {
+        ephy_download_do_download_action (download, EPHY_DOWNLOAD_ACTION_AUTO);
+      } else {
+        ephy_download_do_download_action (download, EPHY_DOWNLOAD_ACTION_NONE);
+      }
     }
 
     ephy_embed_shell_remove_download (embed_shell, download);
