@@ -53,6 +53,14 @@ void     ephy_web_application_free_application_list (GList *list);
 
 gboolean ephy_web_application_exists (const char *name);
 
+void     ephy_web_application_show_install_dialog (GtkWindow *window,
+						   const char *address,
+						   const char *dialog_title,
+						   const char *install_action,
+						   const char *app_title,
+						   const char *icon_href,
+						   GdkPixbuf *icon_pixbuf);
+
 G_END_DECLS
 
 #endif

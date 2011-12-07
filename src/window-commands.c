@@ -289,7 +289,8 @@ get_suggested_filename (EphyWebView *view)
 	if ((g_ascii_strncasecmp (mimetype, "text/html", 9)) == 0)
 	{
 		/* Web Title will be used as suggested filename*/
-		suggested_filename = g_strconcat (ephy_web_view_get_title (view), ".html", NULL);
+		suggested_filename = g_strconcat (ephy_web_view_get_title (view),
+						  ".html", NULL);
 	}
 	else
 	{
@@ -333,24 +334,8 @@ window_cmd_file_save_as (GtkAction *action,
 	gtk_widget_show (GTK_WIDGET (dialog));
 }
 
-typedef struct {
-	EphyWebView *view;
-	GtkWidget *image;
-	GtkWidget *entry;
-	GtkWidget *spinner;
-	GtkWidget *box;
-	char *icon_href;
-} EphyApplicationDialogData;
-
-static void
-ephy_application_dialog_data_free (EphyApplicationDialogData *data)
-{
-	g_free (data->icon_href);
-	g_slice_free (EphyApplicationDialogData, data);
-}
-
-static void
-take_page_snapshot_and_set_image (EphyApplicationDialogData *data)
+static GdkPixbuf *
+take_page_snapshot (EphyWebView *view)
 {
 	GdkPixbuf *snapshot;
 	int x, y, w, h;
@@ -358,196 +343,38 @@ take_page_snapshot_and_set_image (EphyApplicationDialogData *data)
 	x = y = 0;
 	w = h = 128; /* GNOME hi-res icon size. */
 
-	snapshot = ephy_web_view_get_snapshot (data->view, x, y, w, h);
+	snapshot = ephy_web_view_get_snapshot (view, x, y, w, h);
 
-	gtk_image_set_from_pixbuf (GTK_IMAGE (data->image), snapshot);
-	g_object_unref (snapshot);
+	return snapshot;
 }
 
-static void
-download_status_changed_cb (WebKitDownload *download,
-			    GParamSpec *spec,
-			    EphyApplicationDialogData *data)
+static char *
+get_default_application_image (EphyWebView *view)
 {
-	WebKitDownloadStatus status = webkit_download_get_status (download);
-	const char *destination;
+       WebKitDOMDocument *document;
+       WebKitDOMNodeList *links;
+       gulong length, i;
+       char *href = NULL;
 
-	switch (status)
-	{
-	case WEBKIT_DOWNLOAD_STATUS_FINISHED:
-		destination = g_filename_from_uri (webkit_download_get_destination_uri (download),
-						   NULL, NULL);
-		gtk_image_set_from_file (GTK_IMAGE (data->image), destination);
-		break;
-	case WEBKIT_DOWNLOAD_STATUS_ERROR:
-	case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
-		/* Something happened, default to a page snapshot. */
-		take_page_snapshot_and_set_image (data);
-		break;
-	default:
-		break;
-	}
-}
+       document = webkit_web_view_get_dom_document (WEBKIT_WEB_VIEW (view));
+       links = webkit_dom_document_get_elements_by_tag_name (document, "link");
+       length = webkit_dom_node_list_get_length (links);
 
-static void
-download_icon_and_set_image (EphyApplicationDialogData *data)
-{
-	WebKitNetworkRequest *request;
-	WebKitDownload *download;
-	char *destination, *destination_uri, *tmp_filename;
+       for (i = 0; i < length; i++) {
+               char *rel;
+               WebKitDOMNode *node = webkit_dom_node_list_item (links, i);
+               rel = webkit_dom_html_link_element_get_rel (WEBKIT_DOM_HTML_LINK_ELEMENT (node));
+               /* TODO: support more than one possible icon. */
+               if (g_strcmp0 (rel, "apple-touch-icon") == 0 ||
+                   g_strcmp0 (rel, "apple-touch-icon-precomposed") == 0)
+               {
+		       href = g_strdup (webkit_dom_html_link_element_get_href (WEBKIT_DOM_HTML_LINK_ELEMENT (node)));
+                       g_free (rel);
+                       break;
+               }
+       }
 
-	request = webkit_network_request_new (data->icon_href);
-	download = webkit_download_new (request);
-	g_object_unref (request);
-
-	tmp_filename = ephy_file_tmp_filename ("ephy-download-XXXXXX", NULL);
-	destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
-	destination_uri = g_filename_to_uri (destination, NULL, NULL);
-	webkit_download_set_destination_uri (download, destination_uri);
-	g_free (destination);
-	g_free (destination_uri);
-	g_free (tmp_filename);
-
-	g_signal_connect (download, "notify::status",
-			  G_CALLBACK (download_status_changed_cb), data);
-
-	webkit_download_start (download);	
-}
-
-static void
-fill_default_application_image (EphyApplicationDialogData *data)
-{
-	WebKitDOMDocument *document;
-	WebKitDOMNodeList *links;
-	gulong length, i;
-
-	document = webkit_web_view_get_dom_document (WEBKIT_WEB_VIEW (data->view));
-	links = webkit_dom_document_get_elements_by_tag_name (document, "link");
-	length = webkit_dom_node_list_get_length (links);
-
-	for (i = 0; i < length; i++)
-	{
-		char *rel;
-		WebKitDOMNode *node = webkit_dom_node_list_item (links, i);
-		rel = webkit_dom_html_link_element_get_rel (WEBKIT_DOM_HTML_LINK_ELEMENT (node));
-		/* TODO: support more than one possible icon. */
-		if (g_strcmp0 (rel, "apple-touch-icon") == 0 ||
-		    g_strcmp0 (rel, "apple-touch-icon-precomposed") == 0)
-		{
-			data->icon_href = webkit_dom_html_link_element_get_href (WEBKIT_DOM_HTML_LINK_ELEMENT (node));
-			download_icon_and_set_image (data);
-			g_free (rel);
-			return;
-		}
-	}
-
-	/* If we make it here, no "apple-touch-icon" link was
-	 * found. Take a snapshot of the page. */
-	take_page_snapshot_and_set_image (data);
-}
-
-static void
-fill_default_application_title (EphyApplicationDialogData *data)
-{
-	const char *title = ephy_web_view_get_title (data->view);
-	gtk_entry_set_text (GTK_ENTRY (data->entry), title);
-}
-
-static void
-notify_launch_cb (NotifyNotification *notification,
-		  char *action,
-		  gpointer user_data)
-{
-	char * desktop_file = user_data;
-	/* A gross hack to be able to launch epiphany from within
-	 * Epiphany. Might be a good idea to figure out a better
-	 * solution... */
-	g_unsetenv (EPHY_UUID_ENVVAR);
-	ephy_file_launch_desktop_file (desktop_file, NULL, 0, NULL);
-	g_free (desktop_file);
-}
-
-static gboolean
-confirm_web_application_overwrite (GtkWindow *parent, const char *title)
-{
-  GtkResponseType response;
-  GtkWidget *dialog;
-
-  dialog = gtk_message_dialog_new (parent, 0,
-				   GTK_MESSAGE_QUESTION,
-				   GTK_BUTTONS_NONE,
-				   _("A web application named '%s' already exists. Do you want to replace it?"),
-				   title);
-  gtk_dialog_add_buttons (GTK_DIALOG (dialog),
-			  _("Cancel"),
-			  GTK_RESPONSE_CANCEL,
-			  _("Replace"),
-			  GTK_RESPONSE_OK,
-			  NULL);
-  gtk_message_dialog_format_secondary_text (GTK_MESSAGE_DIALOG (dialog),
-                                            _("An application with the same name already exists. Replacing it will "
-					      "overwrite it."));
-  gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_CANCEL);
-  response = gtk_dialog_run (GTK_DIALOG (dialog));
-
-  gtk_widget_destroy (dialog);
-
-  return response == GTK_RESPONSE_OK;
-}
-
-static void
-dialog_save_as_application_response_cb (GtkDialog *dialog,
-					gint response,
-					EphyApplicationDialogData *data)
-{
-	const char *app_name;
-	char *desktop_file;
-	char *message;
-	NotifyNotification *notification;
-
-	if (response == GTK_RESPONSE_OK) {
-		app_name = gtk_entry_get_text (GTK_ENTRY (data->entry));
-
-		if (ephy_web_application_exists (app_name))
-		{
-			if (confirm_web_application_overwrite (GTK_WINDOW (dialog), app_name))
-				ephy_web_application_delete (app_name);
-			else
-				return;
-		}
-
-		/* Create Web Application, including a new profile and .desktop file. */
-		desktop_file = ephy_web_application_create (webkit_web_view_get_uri (WEBKIT_WEB_VIEW (data->view)),
-							    app_name,
-							    gtk_image_get_pixbuf (GTK_IMAGE (data->image)));
-		if (desktop_file)
-			message = g_strdup_printf (_("The application '%s' is ready to be used"),
-						   app_name);
-		else
-			message = g_strdup_printf (_("The application '%s' could not be created"),
-						   app_name);
-
-		notification = notify_notification_new (message,
-							NULL, NULL);
-		g_free (message);
-
-		if (desktop_file) {
-			notify_notification_add_action (notification, "launch", _("Launch"),
-							(NotifyActionCallback)notify_launch_cb,
-							g_path_get_basename (desktop_file),
-							NULL);
-			notify_notification_set_icon_from_pixbuf (notification, gtk_image_get_pixbuf (GTK_IMAGE (data->image)));
-			g_free (desktop_file);
-		}
-
-		notify_notification_set_timeout (notification, NOTIFY_EXPIRES_DEFAULT);
-		notify_notification_set_urgency (notification, NOTIFY_URGENCY_LOW);
-		notify_notification_set_hint (notification, "transient", g_variant_new_boolean (TRUE));
-		notify_notification_show (notification, NULL);
-	}
-
-	ephy_application_dialog_data_free (data);
-	gtk_widget_destroy (GTK_WIDGET (dialog));
+       return href;
 }
 
 void
@@ -555,55 +382,30 @@ window_cmd_file_save_as_application (GtkAction *action,
 				     EphyWindow *window)
 {
 	EphyEmbed *embed;
-	GtkWidget *dialog, *box, *image, *entry, *content_area;
 	EphyWebView *view;
-	EphyApplicationDialogData *data;
+	char *icon_href;
+	GdkPixbuf *snapshot;
 
 	embed = ephy_embed_container_get_active_child (EPHY_EMBED_CONTAINER (window));
 	g_return_if_fail (embed != NULL);
 
 	view = EPHY_WEB_VIEW (EPHY_GET_WEBKIT_WEB_VIEW_FROM_EMBED (embed));
 
-	/* Show dialog with icon, title. */
-	dialog = gtk_dialog_new_with_buttons (_("Create Web Application"),
-					      GTK_WINDOW (window),
-					      0,
-					      GTK_STOCK_CANCEL,
-					      GTK_RESPONSE_CANCEL,
-					      _("C_reate"),
-					      GTK_RESPONSE_OK,
-					      NULL);
+	icon_href = get_default_application_image (view);
+	snapshot = take_page_snapshot (view);
 
-	content_area = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
-	gtk_container_set_border_width (GTK_CONTAINER (dialog), 5);
-	gtk_box_set_spacing (GTK_BOX (content_area), 14); /* 14 + 2 * 5 = 24 */
+	ephy_web_application_show_install_dialog (GTK_WINDOW (window),
+						  webkit_web_view_get_uri (WEBKIT_WEB_VIEW (view)),
+						  _("Create Web Application"),
+						  _("Create"),
+						  ephy_web_view_get_title (view),
+						  icon_href,
+						  snapshot);
 
-	box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
-	gtk_container_add (GTK_CONTAINER (content_area), box);
+	g_free (icon_href);
 
-	image = gtk_image_new ();
-	gtk_widget_set_size_request (image, 128, 128);
-	gtk_container_add (GTK_CONTAINER (box), image);
-
-	entry = gtk_entry_new ();
-	gtk_entry_set_activates_default (GTK_ENTRY (entry), TRUE);
-	gtk_box_pack_end (GTK_BOX (box), entry, FALSE, FALSE, 0);
-
-	data = g_slice_new0 (EphyApplicationDialogData);
-	data->view = view;
-	data->image = image;
-	data->entry = entry;
-
-	fill_default_application_image (data);
-	fill_default_application_title (data);
-
-	gtk_widget_show_all (dialog);
-
-	gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_OK);
-	g_signal_connect (dialog, "response",
-			  G_CALLBACK (dialog_save_as_application_response_cb),
-			  data);
-	gtk_widget_show_all (dialog);
+	if (snapshot)
+		g_object_unref (snapshot);
 }
 
 void

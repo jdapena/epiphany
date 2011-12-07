@@ -26,6 +26,9 @@
 #include "ephy-file-helpers.h"
 
 #include <glib/gstdio.h>
+#include <glib/gi18n.h>
+#include <gtk/gtk.h>
+#include <libnotify/notify.h>
 #include <libsoup/soup-gnome.h>
 #include <webkit/webkit.h>
 
@@ -439,6 +442,7 @@ ephy_web_application_get_application_list ()
 
         key = g_key_file_new ();
         g_key_file_load_from_data (key, contents, -1, 0, NULL);
+
         app->name = g_key_file_get_string (key, "Application", "Name", NULL);
         app->origin = g_key_file_get_string (key, "Application", "Origin", NULL);
         app->launch_path = g_key_file_get_string (key, "Application", "LaunchPath", NULL);
@@ -524,4 +528,241 @@ ephy_web_application_exists (const char *name)
   g_free (profile_dir);
 
   return profile_exists;
+}
+
+typedef struct {
+  char *address;
+  GtkWidget *image;
+  GtkWidget *entry;
+  GtkWidget *spinner;
+  GtkWidget *box;
+  char *icon_href;
+} EphyApplicationDialogData;
+
+static void
+ephy_application_dialog_data_free (EphyApplicationDialogData *data)
+{
+  g_free (data->address);
+  g_free (data->icon_href);
+  g_slice_free (EphyApplicationDialogData, data);
+}
+
+static void
+download_status_changed_cb (WebKitDownload *download,
+                            GParamSpec *spec,
+                            EphyApplicationDialogData *data)
+{
+  WebKitDownloadStatus status = webkit_download_get_status (download);
+  const char *destination;
+
+  switch (status)
+  {
+	case WEBKIT_DOWNLOAD_STATUS_FINISHED:
+    destination = g_filename_from_uri (webkit_download_get_destination_uri (download),
+                                       NULL, NULL);
+	  gtk_image_set_from_file (GTK_IMAGE (data->image), destination);
+	  break;
+  case WEBKIT_DOWNLOAD_STATUS_ERROR:
+  case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
+  default:
+    break;
+  }
+}
+
+static void
+download_icon_and_set_image (EphyApplicationDialogData *data)
+{
+  WebKitNetworkRequest *request;
+  WebKitDownload *download;
+  char *destination, *destination_uri, *tmp_filename;
+
+  request = webkit_network_request_new (data->icon_href);
+  download = webkit_download_new (request);
+  g_object_unref (request);
+
+  tmp_filename = ephy_file_tmp_filename ("ephy-download-XXXXXX", NULL);
+  destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
+  destination_uri = g_filename_to_uri (destination, NULL, NULL);
+  webkit_download_set_destination_uri (download, destination_uri);
+  g_free (destination);
+  g_free (destination_uri);
+  g_free (tmp_filename);
+
+  g_signal_connect (download, "notify::status",
+                    G_CALLBACK (download_status_changed_cb), data);
+
+  webkit_download_start (download);	
+}
+
+static void
+fill_default_application_image (EphyApplicationDialogData *data,
+                                const char *icon_href,
+                                GdkPixbuf *icon_pixbuf)
+{
+  if (icon_pixbuf) {
+    gtk_image_set_from_pixbuf (GTK_IMAGE (data->image), icon_pixbuf);
+  }
+  if (icon_href) {
+    data->icon_href = g_strdup (icon_href);
+    download_icon_and_set_image (data);
+  }
+}
+
+static void
+notify_launch_cb (NotifyNotification *notification,
+                  char *action,
+                  gpointer user_data)
+{
+  char * desktop_file = user_data;
+  /* A gross hack to be able to launch epiphany from within
+   * Epiphany. Might be a good idea to figure out a better
+   * solution... */
+  g_unsetenv (EPHY_UUID_ENVVAR);
+  ephy_file_launch_desktop_file (desktop_file, NULL, 0, NULL);
+  g_free (desktop_file);
+}
+
+static gboolean
+confirm_web_application_overwrite (GtkWindow *parent,
+                                   const char *title)
+{
+  GtkResponseType response;
+  GtkWidget *dialog;
+
+  dialog = gtk_message_dialog_new (parent, 0,
+                                   GTK_MESSAGE_QUESTION,
+                                   GTK_BUTTONS_NONE,
+                                   _("A web application named '%s' already exists. "
+                                     "Do you want to replace it?"),
+                                   title);
+  gtk_dialog_add_buttons (GTK_DIALOG (dialog),
+                          _("Cancel"),
+                          GTK_RESPONSE_CANCEL,
+                          _("Replace"),
+                          GTK_RESPONSE_OK,
+                          NULL);
+  gtk_message_dialog_format_secondary_text (GTK_MESSAGE_DIALOG (dialog),
+                                            _("An application with the same name "
+                                              "already exists. Replacing it will "
+                                              "overwrite it."));
+  gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_CANCEL);
+  response = gtk_dialog_run (GTK_DIALOG (dialog));
+
+  gtk_widget_destroy (dialog);
+
+  return response == GTK_RESPONSE_OK;
+}
+
+static void
+dialog_application_install_response_cb (GtkDialog *dialog,
+                                        gint response,
+                                        EphyApplicationDialogData *data)
+{
+  char *profile_dir;
+  char *desktop_file;
+  char *message;
+  NotifyNotification *notification;
+  gboolean profile_exists;
+
+  if (response == GTK_RESPONSE_OK) {
+	  profile_dir = ephy_web_application_get_profile_directory (gtk_entry_get_text (GTK_ENTRY (data->entry)));
+    profile_exists = g_file_test (profile_dir, G_FILE_TEST_IS_DIR);
+    g_free (profile_dir);
+
+    if (profile_exists) {
+		  if (confirm_web_application_overwrite (GTK_WINDOW (dialog),
+                                             gtk_entry_get_text (GTK_ENTRY (data->entry))))
+        ephy_web_application_delete (gtk_entry_get_text (GTK_ENTRY (data->entry)));
+      else
+        return;
+    }
+
+		/* Create Web Application, including a new profile and .desktop file. */
+    desktop_file =
+      ephy_web_application_create (data->address,
+                                   gtk_entry_get_text (GTK_ENTRY (data->entry)),
+                                   gtk_image_get_pixbuf (GTK_IMAGE (data->image)));
+    if (desktop_file)
+      message = g_strdup_printf (_("The application '%s' is ready to be used"),
+                                 gtk_entry_get_text (GTK_ENTRY (data->entry)));
+    else
+		  message = g_strdup_printf (_("The application '%s' could not be created"),
+                                 gtk_entry_get_text (GTK_ENTRY (data->entry)));
+
+	  notification = notify_notification_new (message, NULL, NULL);
+    g_free (message);
+
+    if (desktop_file) {
+      notify_notification_add_action (notification, "launch", _("Launch"),
+                                      (NotifyActionCallback)notify_launch_cb,
+                                      g_path_get_basename (desktop_file),
+                                      NULL);
+      notify_notification_set_icon_from_pixbuf (notification, 
+                                                gtk_image_get_pixbuf (GTK_IMAGE (data->image)));
+			g_free (desktop_file);
+    }
+
+    notify_notification_set_timeout (notification, NOTIFY_EXPIRES_DEFAULT);
+    notify_notification_set_urgency (notification, NOTIFY_URGENCY_LOW);
+    notify_notification_set_hint (notification, "transient", g_variant_new_boolean (TRUE));
+    notify_notification_show (notification, NULL);
+  }
+
+  ephy_application_dialog_data_free (data);
+  gtk_widget_destroy (GTK_WIDGET (dialog));
+}
+
+
+void
+ephy_web_application_show_install_dialog (GtkWindow *window,
+                                          const char *address,
+                                          const char *dialog_title,
+                                          const char *install_action,
+                                          const char *app_title,
+                                          const char *icon_href,
+                                          GdkPixbuf *icon_pixbuf)
+{
+  GtkWidget *dialog, *box, *image, *entry, *content_area;
+  EphyApplicationDialogData *data;
+
+  /* Show dialog with icon, title. */
+  dialog = gtk_dialog_new_with_buttons (dialog_title,
+                                        GTK_WINDOW (window),
+                                        0,
+                                        GTK_STOCK_CANCEL,
+                                        GTK_RESPONSE_CANCEL,
+                                        install_action,
+                                        GTK_RESPONSE_OK,
+                                        NULL);
+
+  content_area = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
+  gtk_container_set_border_width (GTK_CONTAINER (dialog), 5);
+  gtk_box_set_spacing (GTK_BOX (content_area), 14); /* 14 + 2 * 5 = 24 */
+
+  box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
+  gtk_container_add (GTK_CONTAINER (content_area), box);
+
+  image = gtk_image_new ();
+  gtk_widget_set_size_request (image, 128, 128);
+  gtk_container_add (GTK_CONTAINER (box), image);
+
+  entry = gtk_entry_new ();
+  gtk_entry_set_activates_default (GTK_ENTRY (entry), TRUE);
+  gtk_box_pack_end (GTK_BOX (box), entry, FALSE, FALSE, 0);
+
+  data = g_slice_new0 (EphyApplicationDialogData);
+  data->address = g_strdup (address);
+  data->image = image;
+  data->entry = entry;
+
+  fill_default_application_image (data, icon_href, icon_pixbuf);
+  gtk_entry_set_text (GTK_ENTRY (entry), app_title);
+
+  gtk_widget_show_all (dialog);
+
+  gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_OK);
+  g_signal_connect (dialog, "response",
+                    G_CALLBACK (dialog_application_install_response_cb),
+                    data);
+  gtk_widget_show_all (dialog);
 }
