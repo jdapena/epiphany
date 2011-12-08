@@ -33,6 +33,8 @@
 #include "ephy-embed-shell.h"
 #include "ephy-prefs.h"
 #include "ephy-settings.h"
+#include "ephy-string.h"
+#include "ephy-web-app-utils.h"
 #include "ephy-web-view.h"
 #include "nautilus-floating-bar.h"
 
@@ -481,6 +483,18 @@ app_manifest_available_cb (EphyDownload *download,
                            char *destination_path,
                            EphyEmbed *embed)
 {
+  GtkWidget *toplevel;
+  GtkWindow *window;
+  toplevel = gtk_widget_get_toplevel (GTK_WIDGET (embed));
+
+  if (gtk_widget_is_toplevel (toplevel) &&
+      GTK_IS_WINDOW (toplevel)) {
+    window = GTK_WINDOW (toplevel);
+  } else {
+    window = NULL;
+  }
+
+  ephy_web_application_install_manifest (window, origin, destination_path);
   
 }
 

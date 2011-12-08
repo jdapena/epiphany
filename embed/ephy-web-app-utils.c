@@ -28,9 +28,11 @@
 #include <glib/gstdio.h>
 #include <glib/gi18n.h>
 #include <gtk/gtk.h>
+#include <json-glib/json-glib.h>
 #include <libnotify/notify.h>
 #include <libsoup/soup-gnome.h>
 #include <webkit/webkit.h>
+#include <stdlib.h>
 
 #define EPHY_WEB_APP_DESKTOP_FILE_PREFIX "epiphany-"
 
@@ -183,11 +185,11 @@ out:
 
 #define EPHY_TOOLBARS_XML_FILE "epiphany-toolbars-3.xml"
 
-
 static char *
 create_desktop_and_metadata_files (const char *address,
                                    const char *profile_dir,
-                                   const char *title,
+                                   const char *name,
+                                   const char *description,
                                    GdkPixbuf *icon)
 {
   GKeyFile *desktop_file = NULL;
@@ -205,7 +207,7 @@ create_desktop_and_metadata_files (const char *address,
 
   g_return_val_if_fail (profile_dir, NULL);
 
-  wm_class = get_wm_class_from_app_title (title);
+  wm_class = get_wm_class_from_app_title (name);
 
   if (!wm_class)
     goto out;
@@ -213,8 +215,10 @@ create_desktop_and_metadata_files (const char *address,
   desktop_file = g_key_file_new ();
   metadata_file = g_key_file_new ();
   
-  g_key_file_set_value (desktop_file, "Desktop Entry", "Name", title);
-  g_key_file_set_value (metadata_file, "Application", "Name", title);
+  g_key_file_set_value (desktop_file, "Desktop Entry", "Name", name);
+  g_key_file_set_value (metadata_file, "Application", "Name", name);
+
+  g_key_file_set_value (metadata_file, "Application", "Description", description);
 
   exec_string = g_strdup_printf ("epiphany --application-mode --profile=\"%s\" %s",
                                  profile_dir,
@@ -342,6 +346,7 @@ create_cookie_jar_for_domain (const char *address, const char *directory)
  * ephy_web_application_create:
  * @address: the address of the new web application
  * @name: the name for the new web application
+ * @description: the description of the new web application
  * @icon: the icon for the new web application
  * 
  * Creates a new Web Application for @address.
@@ -349,7 +354,7 @@ create_cookie_jar_for_domain (const char *address, const char *directory)
  * Returns: (transfer-full): the path to the desktop file representing the new application
  **/
 char *
-ephy_web_application_create (const char *address, const char *name, GdkPixbuf *icon)
+ephy_web_application_create (const char *address, const char *name, const char *description, GdkPixbuf *icon)
 {
   char *profile_dir = NULL;
   char *toolbar_path = NULL;
@@ -379,7 +384,7 @@ ephy_web_application_create (const char *address, const char *name, GdkPixbuf *i
   create_cookie_jar_for_domain (address, profile_dir);
 
   /* Create the deskop file. */
-  desktop_file_path = create_desktop_and_metadata_files (address, profile_dir, name, icon);
+  desktop_file_path = create_desktop_and_metadata_files (address, profile_dir, name, description, icon);
 
 out:
   if (toolbar_path)
@@ -534,6 +539,7 @@ typedef struct {
   char *address;
   GtkWidget *image;
   GtkWidget *entry;
+  GtkWidget *description_label;
   GtkWidget *spinner;
   GtkWidget *box;
   char *icon_href;
@@ -624,7 +630,7 @@ notify_launch_cb (NotifyNotification *notification,
 
 static gboolean
 confirm_web_application_overwrite (GtkWindow *parent,
-                                   const char *title)
+                                   const char *name)
 {
   GtkResponseType response;
   GtkWidget *dialog;
@@ -634,7 +640,7 @@ confirm_web_application_overwrite (GtkWindow *parent,
                                    GTK_BUTTONS_NONE,
                                    _("A web application named '%s' already exists. "
                                      "Do you want to replace it?"),
-                                   title);
+                                   name);
   gtk_dialog_add_buttons (GTK_DIALOG (dialog),
                           _("Cancel"),
                           GTK_RESPONSE_CANCEL,
@@ -681,15 +687,16 @@ dialog_application_install_response_cb (GtkDialog *dialog,
     desktop_file =
       ephy_web_application_create (data->address,
                                    gtk_entry_get_text (GTK_ENTRY (data->entry)),
+                                   gtk_label_get_text (GTK_LABEL (data->description_label)),
                                    gtk_image_get_pixbuf (GTK_IMAGE (data->image)));
-    if (desktop_file)
-      message = g_strdup_printf (_("The application '%s' is ready to be used"),
+	  if (desktop_file)
+		  message = g_strdup_printf (_("The application '%s' is ready to be used"),
                                  gtk_entry_get_text (GTK_ENTRY (data->entry)));
     else
-		  message = g_strdup_printf (_("The application '%s' could not be created"),
+      message = g_strdup_printf (_("The application '%s' could not be created"),
                                  gtk_entry_get_text (GTK_ENTRY (data->entry)));
 
-	  notification = notify_notification_new (message, NULL, NULL);
+    notification = notify_notification_new (message, NULL, NULL);
     g_free (message);
 
     if (desktop_file) {
@@ -697,8 +704,7 @@ dialog_application_install_response_cb (GtkDialog *dialog,
                                       (NotifyActionCallback)notify_launch_cb,
                                       g_path_get_basename (desktop_file),
                                       NULL);
-      notify_notification_set_icon_from_pixbuf (notification, 
-                                                gtk_image_get_pixbuf (GTK_IMAGE (data->image)));
+      notify_notification_set_icon_from_pixbuf (notification, gtk_image_get_pixbuf (GTK_IMAGE (data->image)));
 			g_free (desktop_file);
     }
 
@@ -718,15 +724,16 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
                                           const char *address,
                                           const char *dialog_title,
                                           const char *install_action,
-                                          const char *app_title,
+                                          const char *app_name,
+                                          const char *app_description,
                                           const char *icon_href,
                                           GdkPixbuf *icon_pixbuf)
 {
-  GtkWidget *dialog, *box, *image, *entry, *content_area;
-  EphyApplicationDialogData *data;
+	GtkWidget *dialog, *box, *image, *entry, *label, *content_area;
+	EphyApplicationDialogData *data;
 
-  /* Show dialog with icon, title. */
-  dialog = gtk_dialog_new_with_buttons (dialog_title,
+	/* Show dialog with icon, title. */
+	dialog = gtk_dialog_new_with_buttons (dialog_title,
                                         GTK_WINDOW (window),
                                         0,
                                         GTK_STOCK_CANCEL,
@@ -735,34 +742,159 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
                                         GTK_RESPONSE_OK,
                                         NULL);
 
-  content_area = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
-  gtk_container_set_border_width (GTK_CONTAINER (dialog), 5);
-  gtk_box_set_spacing (GTK_BOX (content_area), 14); /* 14 + 2 * 5 = 24 */
+	content_area = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
+	gtk_container_set_border_width (GTK_CONTAINER (dialog), 5);
+	gtk_box_set_spacing (GTK_BOX (content_area), 14); /* 14 + 2 * 5 = 24 */
 
-  box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
-  gtk_container_add (GTK_CONTAINER (content_area), box);
+	box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
+	gtk_container_add (GTK_CONTAINER (content_area), box);
 
-  image = gtk_image_new ();
-  gtk_widget_set_size_request (image, 128, 128);
-  gtk_container_add (GTK_CONTAINER (box), image);
+	image = gtk_image_new ();
+	gtk_widget_set_size_request (image, 128, 128);
+	gtk_container_add (GTK_CONTAINER (box), image);
 
-  entry = gtk_entry_new ();
-  gtk_entry_set_activates_default (GTK_ENTRY (entry), TRUE);
-  gtk_box_pack_end (GTK_BOX (box), entry, FALSE, FALSE, 0);
+	entry = gtk_entry_new ();
+	gtk_entry_set_activates_default (GTK_ENTRY (entry), TRUE);
+	gtk_box_pack_end (GTK_BOX (box), entry, FALSE, FALSE, 0);
 
-  data = g_slice_new0 (EphyApplicationDialogData);
-  data->address = g_strdup (address);
-  data->image = image;
-  data->entry = entry;
+  label = gtk_label_new (app_description);
+  gtk_box_pack_end (GTK_BOX (box), label, FALSE, FALSE, 0);
+  
+	data = g_slice_new0 (EphyApplicationDialogData);
+	data->address = g_strdup (address);
+	data->image = image;
+	data->entry = entry;
+  data->description_label = label;
 
-  fill_default_application_image (data, icon_href, icon_pixbuf);
-  gtk_entry_set_text (GTK_ENTRY (entry), app_title);
+	fill_default_application_image (data, icon_href, icon_pixbuf);
+  gtk_entry_set_text (GTK_ENTRY (entry), app_name);
 
-  gtk_widget_show_all (dialog);
+	gtk_widget_show_all (dialog);
+  if (app_description == NULL) {
+    gtk_widget_hide (label);
+  }
 
   gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_OK);
   g_signal_connect (dialog, "response",
                     G_CALLBACK (dialog_application_install_response_cb),
                     data);
   gtk_widget_show_all (dialog);
+}
+
+void
+ephy_web_application_install_manifest (GtkWindow *window,
+                                       const char *origin,
+                                       const char *manifest_path)
+{
+  JsonParser *parser;
+  GError *error = NULL;
+  char *manifest_file_path;
+
+  manifest_file_path = g_filename_from_uri (manifest_path, NULL, &error);
+  if (!manifest_file_path) {
+    return;
+  }
+
+  parser = json_parser_new ();
+  if (json_parser_load_from_file (parser,
+                                  manifest_file_path,
+                                  &error)) {
+    JsonNode *root_node;
+    JsonNode *node;
+    char *name = NULL;
+    char *icon_href = NULL;
+    char *launch_path = NULL;
+    char *full_path = NULL;
+    char *description = NULL;
+
+    // TODO : free nodes
+    root_node = json_parser_get_root (parser);
+    node = json_path_query ("$.name", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          name = g_strdup (json_array_get_string_element (array, 0));
+        }
+      }
+      json_node_free (node);
+    }
+
+    node = json_path_query ("$.description", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          description = g_strdup (json_array_get_string_element (array, 0));
+        }
+      }
+      json_node_free (node);
+    }
+
+    node = json_path_query ("$.launch_path", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          launch_path = g_strdup (json_array_get_string_element (array, 0));
+        }
+      }
+      json_node_free (node);
+    }
+
+    node = json_path_query ("$.icons", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array;
+
+        array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          JsonObject *object;
+
+          object = json_array_get_object_element (array, 0);
+          if (object) {
+            GList *members, *node, *best_node;
+            unsigned long int best_size;
+
+            best_size = 0;
+            best_node = NULL;
+            members = json_object_get_members (object);
+            for (node = members; node != NULL; node = g_list_next (node)) {
+              unsigned long int node_size;
+              node_size = strtoul(node->data, NULL, 10);
+              if (node_size != ULONG_MAX && node_size >= best_size) {
+                best_size = node_size;
+                best_node = node;
+              }
+            }
+            if (best_node) {
+              icon_href = g_strconcat (origin, json_object_get_string_member (object, (char *) best_node->data), NULL);
+            }
+            g_list_free (members);
+          }
+        }
+      }
+      json_node_free (node);
+    }
+
+    if (launch_path) {
+      full_path = g_strconcat (origin, launch_path, NULL);
+    } else {
+      full_path = g_strdup (origin);
+    }
+
+    ephy_web_application_show_install_dialog (window, full_path,
+                                              _("Install web application"), _("Install"),
+                                              name, description, icon_href, NULL);
+
+    g_free (full_path);
+    g_free (name);
+    g_free (icon_href);
+    
+
+  } else {
+    g_debug ("%s: %s", __FUNCTION__, error->message);
+  }
+
+  g_object_unref (parser);
 }

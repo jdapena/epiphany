@@ -399,6 +399,7 @@ window_cmd_file_save_as_application (GtkAction *action,
 						  _("Create Web Application"),
 						  _("Create"),
 						  ephy_web_view_get_title (view),
+						  NULL,
 						  icon_href,
 						  snapshot);
 

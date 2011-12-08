@@ -41,7 +41,7 @@ typedef struct {
 #define EPHY_WEB_APP_PREFIX "app-"
 #define EPHY_WEB_APP_ICON_NAME "app-icon.png"
 
-char    *ephy_web_application_create (const char *address, const char *name, GdkPixbuf *icon);
+char    *ephy_web_application_create (const char *address, const char *name, const char *description, GdkPixbuf *icon);
 
 gboolean ephy_web_application_delete (const char *name);
 
@@ -55,11 +55,16 @@ gboolean ephy_web_application_exists (const char *name);
 
 void     ephy_web_application_show_install_dialog (GtkWindow *window,
 						   const char *address,
-						   const char *dialog_title,
-						   const char *install_action,
-						   const char *app_title,
-						   const char *icon_href,
-						   GdkPixbuf *icon_pixbuf);
+                                                   const char *dialog_title,
+                                                   const char *install_action,
+                                                   const char *app_title,
+                                                   const char *app_description,
+                                                   const char *icon_href,
+                                                   GdkPixbuf *icon_pixbuf);
+
+void     ephy_web_application_install_manifest (GtkWindow *window,
+                                                const char *origin,
+                                                const char *manifest_path);
 
 G_END_DECLS
 
