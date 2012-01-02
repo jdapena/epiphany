@@ -452,6 +452,7 @@ ephy_web_application_get_application_list ()
         app->origin = g_key_file_get_string (key, "Application", "Origin", NULL);
         app->launch_path = g_key_file_get_string (key, "Application", "LaunchPath", NULL);
         app->description = g_key_file_get_string (key, "Application", "Description", NULL);
+        app->profile_dir = g_strdup (profile_dir);
 
         g_key_file_free (key);
 
@@ -496,6 +497,7 @@ ephy_web_application_free (EphyWebApplication *app)
   g_free (app->icon_url);
   g_free (app->origin);
   g_free (app->launch_path);
+  g_free (app->profile_dir);
   g_slice_free (EphyWebApplication, app);
 }
 
@@ -543,6 +545,8 @@ typedef struct {
   GtkWidget *spinner;
   GtkWidget *box;
   char *icon_href;
+  EphyWebApplicationInstallCallback callback;
+  gpointer userdata;
 } EphyApplicationDialogData;
 
 static void
@@ -664,23 +668,26 @@ dialog_application_install_response_cb (GtkDialog *dialog,
                                         gint response,
                                         EphyApplicationDialogData *data)
 {
-  char *profile_dir;
-  char *desktop_file;
+  char *profile_dir = NULL;
+  char *desktop_file = NULL;
   char *message;
   NotifyNotification *notification;
   gboolean profile_exists;
 
   if (response == GTK_RESPONSE_OK) {
-	  profile_dir = ephy_web_application_get_profile_directory (gtk_entry_get_text (GTK_ENTRY (data->entry)));
+    profile_dir = ephy_web_application_get_profile_directory (gtk_entry_get_text (GTK_ENTRY (data->entry)));
     profile_exists = g_file_test (profile_dir, G_FILE_TEST_IS_DIR);
-    g_free (profile_dir);
 
     if (profile_exists) {
-		  if (confirm_web_application_overwrite (GTK_WINDOW (dialog),
-                                             gtk_entry_get_text (GTK_ENTRY (data->entry))))
+      if (confirm_web_application_overwrite 
+          (GTK_WINDOW (dialog),
+           gtk_entry_get_text (GTK_ENTRY (data->entry)))) {
         ephy_web_application_delete (gtk_entry_get_text (GTK_ENTRY (data->entry)));
-      else
+      } else {
+        if (data->callback)
+          data->callback (GTK_RESPONSE_CANCEL, NULL, NULL, data->userdata);
         return;
+      }
     }
 
 		/* Create Web Application, including a new profile and .desktop file. */
@@ -689,12 +696,15 @@ dialog_application_install_response_cb (GtkDialog *dialog,
                                    gtk_entry_get_text (GTK_ENTRY (data->entry)),
                                    gtk_label_get_text (GTK_LABEL (data->description_label)),
                                    gtk_image_get_pixbuf (GTK_IMAGE (data->image)));
-	  if (desktop_file)
-		  message = g_strdup_printf (_("The application '%s' is ready to be used"),
+
+    if (desktop_file) {
+      message = g_strdup_printf (_("The application '%s' is ready to be used"),
                                  gtk_entry_get_text (GTK_ENTRY (data->entry)));
-    else
+    } else {
       message = g_strdup_printf (_("The application '%s' could not be created"),
                                  gtk_entry_get_text (GTK_ENTRY (data->entry)));
+      response = GTK_RESPONSE_CANCEL;
+    }
 
     notification = notify_notification_new (message, NULL, NULL);
     g_free (message);
@@ -714,6 +724,14 @@ dialog_application_install_response_cb (GtkDialog *dialog,
     notify_notification_show (notification, NULL);
   }
 
+  if (data->callback) {
+    if (desktop_file && !data->callback (response,
+                                         gtk_entry_get_text (GTK_ENTRY (data->entry)),
+                                         profile_dir, data->userdata))
+      ephy_web_application_delete (gtk_entry_get_text (GTK_ENTRY (data->entry)));
+  }
+
+  g_free (profile_dir);
   ephy_application_dialog_data_free (data);
   gtk_widget_destroy (GTK_WIDGET (dialog));
 }
@@ -727,13 +745,15 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
                                           const char *app_name,
                                           const char *app_description,
                                           const char *icon_href,
-                                          GdkPixbuf *icon_pixbuf)
+                                          GdkPixbuf *icon_pixbuf,
+                                          EphyWebApplicationInstallCallback callback,
+                                          gpointer userdata)
 {
-	GtkWidget *dialog, *box, *image, *entry, *label, *content_area;
-	EphyApplicationDialogData *data;
+  GtkWidget *dialog, *box, *image, *entry, *label, *content_area;
+  EphyApplicationDialogData *data;
 
-	/* Show dialog with icon, title. */
-	dialog = gtk_dialog_new_with_buttons (dialog_title,
+  /* Show dialog with icon, title. */
+  dialog = gtk_dialog_new_with_buttons (dialog_title,
                                         GTK_WINDOW (window),
                                         0,
                                         GTK_STOCK_CANCEL,
@@ -742,43 +762,100 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
                                         GTK_RESPONSE_OK,
                                         NULL);
 
-	content_area = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
-	gtk_container_set_border_width (GTK_CONTAINER (dialog), 5);
-	gtk_box_set_spacing (GTK_BOX (content_area), 14); /* 14 + 2 * 5 = 24 */
+  content_area = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
+  gtk_container_set_border_width (GTK_CONTAINER (dialog), 5);
+  gtk_box_set_spacing (GTK_BOX (content_area), 14); /* 14 + 2 * 5 = 24 */
 
-	box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
-	gtk_container_add (GTK_CONTAINER (content_area), box);
+  box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
+  gtk_container_add (GTK_CONTAINER (content_area), box);
 
-	image = gtk_image_new ();
-	gtk_widget_set_size_request (image, 128, 128);
-	gtk_container_add (GTK_CONTAINER (box), image);
+  image = gtk_image_new ();
+  gtk_widget_set_size_request (image, 128, 128);
+  gtk_container_add (GTK_CONTAINER (box), image);
 
-	entry = gtk_entry_new ();
-	gtk_entry_set_activates_default (GTK_ENTRY (entry), TRUE);
-	gtk_box_pack_end (GTK_BOX (box), entry, FALSE, FALSE, 0);
+  entry = gtk_entry_new ();
+  gtk_entry_set_activates_default (GTK_ENTRY (entry), TRUE);
+  gtk_box_pack_end (GTK_BOX (box), entry, FALSE, FALSE, 0);
 
   label = gtk_label_new (app_description);
   gtk_box_pack_end (GTK_BOX (box), label, FALSE, FALSE, 0);
   
-	data = g_slice_new0 (EphyApplicationDialogData);
-	data->address = g_strdup (address);
-	data->image = image;
-	data->entry = entry;
+  data = g_slice_new0 (EphyApplicationDialogData);
+  data->address = g_strdup (address);
+  data->image = image;
+  data->entry = entry;
   data->description_label = label;
+  data->callback = callback;
+  data->userdata = userdata;
 
-	fill_default_application_image (data, icon_href, icon_pixbuf);
+  fill_default_application_image (data, icon_href, icon_pixbuf);
   gtk_entry_set_text (GTK_ENTRY (entry), app_name);
 
-	gtk_widget_show_all (dialog);
-  if (app_description == NULL) {
+  gtk_widget_show_all (dialog);
+  if (app_description == NULL)
     gtk_widget_hide (label);
-  }
 
   gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_OK);
   g_signal_connect (dialog, "response",
                     G_CALLBACK (dialog_application_install_response_cb),
                     data);
   gtk_widget_show_all (dialog);
+}
+
+typedef struct {
+  char *manifest_path;
+  char *install_data;
+} MozAppInstallData;
+    
+static gboolean
+mozapp_install_cb (gint response,
+                   const char *app_name,
+                   const char *profile_dir,
+                   gpointer userdata)
+{
+  gboolean result = TRUE;
+  GError *err = NULL;
+  MozAppInstallData *mozapp_install_data = (MozAppInstallData *) userdata;
+
+  if (response == GTK_RESPONSE_OK) {
+    {
+      GFile *origin_manifest, *destination_manifest;
+      char *manifest_install_path;
+
+      origin_manifest = g_file_new_for_path (mozapp_install_data->manifest_path);
+      manifest_install_path = g_build_filename (profile_dir, "webapp.manifest", NULL);
+      destination_manifest = g_file_new_for_path (manifest_install_path);
+
+      result = g_file_copy (origin_manifest, destination_manifest, 
+                            G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
+                            NULL, NULL, NULL, 
+                            &err);
+
+      g_object_unref (origin_manifest);
+      g_object_unref (destination_manifest);
+      g_free (manifest_install_path);
+    }
+
+    if (result && mozapp_install_data->install_data) {
+      char *install_data_path;
+
+      install_data_path = g_build_filename (profile_dir, "webapp.install_data", NULL);
+
+      result = g_file_set_contents (install_data_path, mozapp_install_data->install_data, -1, &err);
+
+      g_free (install_data_path);
+    }
+  }
+
+  if (!result) {
+    if (err) g_error_free (err);
+  }
+
+  g_free (mozapp_install_data->manifest_path);
+  g_free (mozapp_install_data->install_data);
+  g_slice_free (MozAppInstallData, mozapp_install_data);
+
+  return result;
 }
 
 void
@@ -789,6 +866,7 @@ ephy_web_application_install_manifest (GtkWindow *window,
   JsonParser *parser;
   GError *error = NULL;
   char *manifest_file_path;
+  MozAppInstallData *mozapp_install_data;
 
   manifest_file_path = g_filename_from_uri (manifest_path, NULL, &error);
   if (!manifest_file_path) {
@@ -883,13 +961,19 @@ ephy_web_application_install_manifest (GtkWindow *window,
       full_path = g_strdup (origin);
     }
 
+    mozapp_install_data = g_slice_new0 (MozAppInstallData);
+    mozapp_install_data->manifest_path = g_strdup (manifest_file_path);
+    mozapp_install_data->install_data = NULL;
+
     ephy_web_application_show_install_dialog (window, full_path,
                                               _("Install web application"), _("Install"),
-                                              name, description, icon_href, NULL);
+                                              name, description, icon_href, NULL,
+                                              mozapp_install_cb, (gpointer) mozapp_install_data);
 
     g_free (full_path);
     g_free (name);
     g_free (icon_href);
+    g_free (manifest_file_path);
     
 
   } else {
@@ -897,4 +981,199 @@ ephy_web_application_install_manifest (GtkWindow *window,
   }
 
   g_object_unref (parser);
+}
+
+static void mozapps_init_cb(JSContextRef ctx, JSObjectRef object)
+{
+/* ... */
+}
+
+static void mozapps_finalize_cb(JSObjectRef object)
+{
+/* ... */
+}
+
+static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const char *origin)
+{
+  JSObjectRef result = NULL;
+  char *manifest_path;
+  GFile *manifest_file;
+  char *manifest_contents = NULL;
+  gboolean is_ok = TRUE;
+  GError *err = NULL;
+
+  manifest_path = g_build_filename (ephy_dot_dir (), "webapp.manifest", NULL);
+  manifest_file = g_file_new_for_path (manifest_path);
+  g_free (manifest_path);
+
+  is_ok = g_file_query_exists (manifest_file, NULL);
+
+  if (!is_ok) {
+    GList *apps, *node;
+
+    apps = ephy_web_application_get_application_list ();
+    for (node = apps; node != NULL; node = g_list_next (node)) {
+      EphyWebApplication *app = (EphyWebApplication *) node->data;
+      if (g_strcmp0 (app->origin, origin) == 0) {
+        manifest_path = g_build_filename (app->profile_dir, "webapp.manifest", NULL);
+        manifest_file = g_file_new_for_path (manifest_path);
+
+        is_ok = g_file_query_exists (manifest_file, NULL);
+        break;
+      }
+    }
+  }
+
+  if (is_ok) is_ok = g_file_load_contents (manifest_file, NULL, &manifest_contents, NULL, NULL, &err);
+
+  if (is_ok) {
+    GFileInfo *metadata_info;
+    guint64 created;
+
+    result = JSObjectMake (context, NULL, NULL);
+
+    JSObjectSetProperty (context, result, 
+                         JSStringCreateWithUTF8CString ("manifest"),
+                         JSValueMakeFromJSONString (context, JSStringCreateWithUTF8CString (manifest_contents)), 
+                         kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                         NULL);
+
+    JSObjectSetProperty (context, result, 
+                         JSStringCreateWithUTF8CString ("origin"),
+                         JSValueMakeString (context, JSStringCreateWithUTF8CString (origin)), 
+                         kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                         NULL);
+
+    metadata_info = g_file_query_info (manifest_file, G_FILE_ATTRIBUTE_TIME_MODIFIED, 0, NULL, NULL);
+    created = g_file_info_get_attribute_uint64 (metadata_info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
+
+    JSObjectSetProperty (context, result, 
+                         JSStringCreateWithUTF8CString ("install_time"),
+                         JSValueMakeNumber (context, created), 
+                         kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                         NULL);
+
+  }
+
+  g_free (manifest_contents);
+  
+  return result;
+}
+
+static JSValueRef
+mozapps_am_installed (JSContextRef context,
+                      JSObjectRef function,
+                      JSObjectRef thisObject,
+                      size_t argumentCount,
+                      const JSValueRef arguments[],
+                      JSValueRef *exception)
+{
+  // TODO: create exception
+  if (argumentCount != 1) {
+    return NULL;
+  }
+  if (!JSValueIsObject (context, arguments[0])) {
+    return NULL;
+  } else {
+    JSObjectRef object_ref;
+    JSStringRef script_ref;
+    JSValueRef location_value;
+    JSStringRef location_str;
+    char *location;
+    int location_len;
+    SoupURI *uri, *host_uri;
+    char *origin;
+    JSValueRef callback_parameter = NULL;
+    JSValueRef callback_arguments[1];
+
+    object_ref = JSValueToObject (context, arguments[0], exception);
+    if (object_ref == NULL || !JSObjectIsFunction (context, object_ref)) {
+      return NULL;
+    }
+
+    script_ref = JSStringCreateWithUTF8CString ("window.location.href");
+
+    location_value = JSEvaluateScript (context, script_ref, NULL, NULL, 0, exception);
+    if (!JSValueIsString (context, location_value)) {
+      goto amInstalledFinish;
+    }
+    location_str = JSValueToStringCopy (context, location_value, NULL);
+    location_len = JSStringGetMaximumUTF8CStringSize (location_str);
+    location = g_malloc0(location_len);
+    JSStringGetUTF8CString (location_str, location, location_len);
+
+    uri = soup_uri_new (location);
+    host_uri = soup_uri_copy_host (uri);
+    origin = soup_uri_to_string (host_uri, FALSE);
+
+    soup_uri_free (host_uri);
+    soup_uri_free (uri);
+    g_free (location);
+
+    if (origin == NULL) {
+      goto amInstalledFinish;
+    } else {
+      callback_parameter = mozapps_app_object_from_origin (context, origin);
+    }
+    
+    g_warning("%s: %s", __FUNCTION__, origin);
+    g_free (origin);
+
+  amInstalledFinish:
+
+    if (callback_parameter == NULL) {
+      callback_parameter = JSValueMakeNull (context);
+    }
+    callback_arguments[0] = callback_parameter;
+    
+    JSObjectCallAsFunction (context, object_ref, NULL, 1, callback_arguments, NULL);
+  }
+
+  return NULL;
+}
+
+static const JSStaticFunction mozapps_class_staticfuncs[] =
+{
+{ "amInstalled", mozapps_am_installed, kJSPropertyAttributeDontDelete | kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontEnum },
+{ NULL, NULL, 0 }
+};
+
+static const JSClassDefinition mozapps_class_def =
+{
+0,
+kJSClassAttributeNone,
+"EphyMozAppsClass",
+NULL,
+
+NULL,
+mozapps_class_staticfuncs,
+
+mozapps_init_cb,
+mozapps_finalize_cb,
+
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL
+};
+
+
+void
+ephy_web_application_setup_mozilla_api (JSGlobalContextRef context)
+{
+  JSClassRef mozAppsClassDef = JSClassCreate (&mozapps_class_def);
+  JSObjectRef mozAppsClassObj = JSObjectMake (context, mozAppsClassDef, context);
+  JSObjectRef globalObj = JSContextGetGlobalObject(context);
+  JSStringRef navigatorStr = JSStringCreateWithUTF8CString("navigator");
+  JSValueRef navigatorRef = JSObjectGetProperty (context, globalObj,
+                                                 navigatorStr, NULL);
+  JSObjectRef navigatorObj = JSValueToObject (context, navigatorRef, NULL);
+  JSStringRef mozAppsStr = JSStringCreateWithUTF8CString("mozApps");
+  JSObjectSetProperty(context, navigatorObj, mozAppsStr, mozAppsClassObj,
+                      kJSPropertyAttributeNone, NULL);
 }

@@ -48,6 +48,7 @@
 #include <glib/gstdio.h>
 #include <gnome-keyring.h>
 #include <gtk/gtk.h>
+#include <JavaScriptCore/JavaScript.h>
 #include <libsoup/soup-gnome.h>
 #include <string.h>
 #include <webkit/webkit.h>
@@ -1821,6 +1822,17 @@ geolocation_policy_decision_requested_cb (WebKitWebView *web_view,
   return TRUE;
 }
 
+static void
+window_object_cleared_cb (WebKitWebView *web_view,
+                          WebKitWebFrame *frame,
+                          gpointer context,
+                          gpointer window_object,
+                          gpointer userdata)
+{
+  JSGlobalContextRef js_context = webkit_web_frame_get_global_context (frame);
+  ephy_web_application_setup_mozilla_api (js_context);
+}
+
 static gboolean
 delete_web_app_cb (WebKitDOMHTMLElement *button,
                    WebKitDOMEvent *dom_event,
@@ -2334,6 +2346,10 @@ ephy_web_view_init (EphyWebView *web_view)
 
   g_signal_connect (web_view, "geolocation-policy-decision-requested",
                     G_CALLBACK (geolocation_policy_decision_requested_cb),
+                    NULL);
+
+  g_signal_connect (web_view, "window-object-cleared",
+                    G_CALLBACK (window_object_cleared_cb),
                     NULL);
 
   g_signal_connect (web_view, "notify::load-status",

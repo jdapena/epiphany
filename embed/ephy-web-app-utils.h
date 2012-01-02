@@ -26,8 +26,14 @@
 
 #include <glib.h>
 #include <gtk/gtk.h>
+#include <JavaScriptCore/JavaScript.h>
 
 G_BEGIN_DECLS
+
+typedef gboolean (*EphyWebApplicationInstallCallback) (gint dialog_response, 
+						       const char *app_name,
+						       const char *profile_dir,
+						       gpointer userdata);
 
 typedef struct {
     char *name;
@@ -36,6 +42,7 @@ typedef struct {
     char *description;
     char *launch_path;
     char install_date[128];
+    char *profile_dir;
 } EphyWebApplication;
 
 #define EPHY_WEB_APP_PREFIX "app-"
@@ -57,14 +64,18 @@ void     ephy_web_application_show_install_dialog (GtkWindow *window,
 						   const char *address,
                                                    const char *dialog_title,
                                                    const char *install_action,
-                                                   const char *app_title,
+                                                   const char *app_name,
                                                    const char *app_description,
                                                    const char *icon_href,
-                                                   GdkPixbuf *icon_pixbuf);
+						   GdkPixbuf *icon_pixbuf,
+						   EphyWebApplicationInstallCallback callback,
+						   gpointer userdata);
 
 void     ephy_web_application_install_manifest (GtkWindow *window,
                                                 const char *origin,
                                                 const char *manifest_path);
+
+void     ephy_web_application_setup_mozilla_api (JSGlobalContextRef context);
 
 G_END_DECLS
 

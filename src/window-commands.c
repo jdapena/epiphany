@@ -401,7 +401,8 @@ window_cmd_file_save_as_application (GtkAction *action,
 						  ephy_web_view_get_title (view),
 						  NULL,
 						  icon_href,
-						  snapshot);
+						  snapshot,
+						  NULL, NULL);
 
 	g_free (icon_href);
 
