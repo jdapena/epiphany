@@ -72,8 +72,10 @@ void     ephy_web_application_show_install_dialog (GtkWindow *window,
 						   gpointer userdata);
 
 void     ephy_web_application_install_manifest (GtkWindow *window,
-                                                const char *origin,
-                                                const char *manifest_path);
+						const char *origin,
+						const char *manifest_path,
+						const char *receipt,
+						const char *install_origin);
 
 void     ephy_web_application_setup_mozilla_api (JSGlobalContextRef context);
 

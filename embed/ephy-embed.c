@@ -494,7 +494,7 @@ app_manifest_available_cb (EphyDownload *download,
     window = NULL;
   }
 
-  ephy_web_application_install_manifest (window, origin, destination_path);
+  ephy_web_application_install_manifest (window, origin, destination_path, NULL, NULL);
   
 }
 

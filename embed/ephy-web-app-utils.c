@@ -78,6 +78,22 @@ desktop_filename_from_wm_class (char *wm_class)
   return filename;
 }
 
+static char *
+get_origin (const char *url)
+{
+  char *origin;
+  SoupURI *uri, *host_uri;
+
+  uri = soup_uri_new (url);
+
+  host_uri = soup_uri_copy_host (uri);
+  origin = soup_uri_to_string (host_uri, FALSE);
+  soup_uri_free (host_uri);
+  soup_uri_free (uri);
+
+  return origin;
+}
+
 /**
  * ephy_web_application_get_profile_directory:
  * @name: the application name
@@ -804,7 +820,8 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
 
 typedef struct {
   char *manifest_path;
-  char *install_data;
+  char *receipt;
+  char *install_origin;
 } MozAppInstallData;
     
 static gboolean
@@ -836,14 +853,24 @@ mozapp_install_cb (gint response,
       g_free (manifest_install_path);
     }
 
-    if (result && mozapp_install_data->install_data) {
-      char *install_data_path;
+    if (result && mozapp_install_data->receipt) {
+      char *receipt_path;
 
-      install_data_path = g_build_filename (profile_dir, "webapp.install_data", NULL);
+      receipt_path = g_build_filename (profile_dir, "webapp.receipt", NULL);
 
-      result = g_file_set_contents (install_data_path, mozapp_install_data->install_data, -1, &err);
+      result = g_file_set_contents (receipt_path, mozapp_install_data->receipt, -1, &err);
 
-      g_free (install_data_path);
+      g_free (receipt_path);
+    }
+
+    if (result && mozapp_install_data->install_origin) {
+      char *install_origin_path;
+
+      install_origin_path = g_build_filename (profile_dir, "webapp.install-origin", NULL);
+
+      result = g_file_set_contents (install_origin_path, mozapp_install_data->install_origin, -1, &err);
+
+      g_free (install_origin_path);
     }
   }
 
@@ -852,7 +879,8 @@ mozapp_install_cb (gint response,
   }
 
   g_free (mozapp_install_data->manifest_path);
-  g_free (mozapp_install_data->install_data);
+  g_free (mozapp_install_data->receipt);
+  g_free (mozapp_install_data->install_origin);
   g_slice_free (MozAppInstallData, mozapp_install_data);
 
   return result;
@@ -861,7 +889,9 @@ mozapp_install_cb (gint response,
 void
 ephy_web_application_install_manifest (GtkWindow *window,
                                        const char *origin,
-                                       const char *manifest_path)
+                                       const char *manifest_path,
+                                       const char *receipt,
+                                       const char *install_origin)
 {
   JsonParser *parser;
   GError *error = NULL;
@@ -963,7 +993,8 @@ ephy_web_application_install_manifest (GtkWindow *window,
 
     mozapp_install_data = g_slice_new0 (MozAppInstallData);
     mozapp_install_data->manifest_path = g_strdup (manifest_file_path);
-    mozapp_install_data->install_data = NULL;
+    mozapp_install_data->receipt = g_strdup (receipt);
+    mozapp_install_data->install_origin = g_strdup (install_origin);
 
     ephy_web_application_show_install_dialog (window, full_path,
                                               _("Install web application"), _("Install"),
@@ -1001,6 +1032,7 @@ static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const c
   char *manifest_contents = NULL;
   gboolean is_ok = TRUE;
   GError *err = NULL;
+  char *profile_dir = NULL;
 
   manifest_path = g_build_filename (ephy_dot_dir (), "webapp.manifest", NULL);
   manifest_file = g_file_new_for_path (manifest_path);
@@ -1008,7 +1040,9 @@ static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const c
 
   is_ok = g_file_query_exists (manifest_file, NULL);
 
-  if (!is_ok) {
+  if (is_ok) {
+    profile_dir = g_strdup (ephy_dot_dir ());
+  } else {
     GList *apps, *node;
 
     apps = ephy_web_application_get_application_list ();
@@ -1016,6 +1050,7 @@ static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const c
       EphyWebApplication *app = (EphyWebApplication *) node->data;
       if (g_strcmp0 (app->origin, origin) == 0) {
         manifest_path = g_build_filename (app->profile_dir, "webapp.manifest", NULL);
+        profile_dir = g_strdup (app->profile_dir);
         manifest_file = g_file_new_for_path (manifest_path);
 
         is_ok = g_file_query_exists (manifest_file, NULL);
@@ -1055,7 +1090,50 @@ static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const c
 
   }
 
+  if (is_ok) {
+    char *receipt_path;
+    GFile *receipt_file;
+
+    receipt_path = g_build_filename (profile_dir, "webapp.receipt", NULL);
+    receipt_file = g_file_new_for_path (receipt_path);
+    g_free (receipt_path);
+
+    if (g_file_query_exists (receipt_file, NULL)) {
+      char *receipt_contents;
+      if (g_file_load_contents (receipt_file, NULL, &receipt_contents, NULL, NULL, NULL)) {
+        JSObjectSetProperty (context, result, 
+                             JSStringCreateWithUTF8CString ("receipt"),
+                             JSValueMakeFromJSONString (context, JSStringCreateWithUTF8CString (receipt_contents)), 
+                             kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                             NULL);
+      }
+    }
+    g_object_unref (receipt_file);
+  }
+
+  if (is_ok) {
+    char *install_origin_path;
+    GFile *install_origin_file;
+
+    install_origin_path = g_build_filename (profile_dir, "webapp.install-origin", NULL);
+    install_origin_file = g_file_new_for_path (install_origin_path);
+    g_free (install_origin_path);
+
+    if (g_file_query_exists (install_origin_file, NULL)) {
+      char *install_origin_contents;
+      if (g_file_load_contents (install_origin_file, NULL, &install_origin_contents, NULL, NULL, NULL)) {
+        JSObjectSetProperty (context, result, 
+                             JSStringCreateWithUTF8CString ("installOrigin"),
+                             JSValueMakeString (context, JSStringCreateWithUTF8CString (install_origin_contents)), 
+                             kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                             NULL);
+      }
+    }
+    g_object_unref (install_origin_file);
+  }
+
   g_free (manifest_contents);
+  g_free (profile_dir);
   
   return result;
 }
@@ -1132,9 +1210,147 @@ mozapps_am_installed (JSContextRef context,
   return NULL;
 }
 
+typedef struct {
+  char *install_origin;
+  char *url;
+  char *local_path;
+  char *receipt;
+} EphyMozAppInstallManifestData;
+
+static void
+mozapp_install_manifest_download_status_changed_cb (WebKitDownload *download,
+                                                    GParamSpec *spec,
+                                                    EphyMozAppInstallManifestData *manifest_data)
+{
+	WebKitDownloadStatus status = webkit_download_get_status (download);
+
+	switch (status) {
+	case WEBKIT_DOWNLOAD_STATUS_FINISHED:
+    {
+      char *origin;
+
+      origin = get_origin (manifest_data->url);
+      ephy_web_application_install_manifest (NULL,
+                                             origin,
+                                             manifest_data->local_path,
+                                             manifest_data->receipt,
+                                             manifest_data->install_origin);
+      g_free (origin);
+    }
+
+	case WEBKIT_DOWNLOAD_STATUS_ERROR:
+	case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
+    g_free (manifest_data->url);
+    g_free (manifest_data->local_path);
+    g_free (manifest_data->receipt);
+    g_free (manifest_data->install_origin);
+    g_slice_free (EphyMozAppInstallManifestData, manifest_data);
+
+		g_object_unref (download);
+
+		break;
+	default:
+		break;
+	}
+}
+
+
+static JSValueRef
+mozapps_install (JSContextRef context,
+                 JSObjectRef function,
+                 JSObjectRef thisObject,
+                 size_t argumentCount,
+                 const JSValueRef arguments[],
+                 JSValueRef *exception)
+{
+  char *url;
+  char *receipt = NULL;
+  JSStringRef url_str;
+  int max_url_str_size;
+  WebKitNetworkRequest *request;
+  WebKitDownload *download;
+  EphyMozAppInstallManifestData *install_manifest_data;
+	char *destination, *destination_uri, *tmp_filename;
+
+  if (argumentCount < 1 || argumentCount > 2) {
+    return NULL;
+  }
+  if (!JSValueIsString (context, arguments[0])) {
+    return NULL;
+  }
+  url_str = JSValueToStringCopy (context, arguments[0], NULL);
+  if (url_str == NULL) {
+    return NULL;
+  }
+
+  max_url_str_size = JSStringGetMaximumUTF8CStringSize (url_str);
+  url = g_malloc0 (max_url_str_size);
+  JSStringGetUTF8CString (url_str, url, max_url_str_size);
+
+  if (argumentCount > 1) {
+    JSStringRef json_str_receipt;
+
+    json_str_receipt = JSValueCreateJSONString (context, arguments[1], 2, NULL);
+
+    if (json_str_receipt) {
+      int max_receipt_str_size = JSStringGetMaximumUTF8CStringSize (json_str_receipt);
+      receipt = g_malloc0 (max_receipt_str_size);
+      JSStringGetUTF8CString (json_str_receipt, receipt, max_receipt_str_size);
+    }
+  }
+
+  install_manifest_data = g_slice_new0 (EphyMozAppInstallManifestData);
+  install_manifest_data->url = g_strdup (url);
+  install_manifest_data->receipt = g_strdup (receipt);
+
+  {
+    JSStringRef script_ref;
+    JSValueRef location_value;
+
+    script_ref = JSStringCreateWithUTF8CString ("window.location.href");
+
+    location_value = JSEvaluateScript (context, script_ref, NULL, NULL, 0, exception);
+    if (JSValueIsString (context, location_value)) {
+      JSStringRef location_str;
+      gint location_len;
+      char *location;
+      location_str = JSValueToStringCopy (context, location_value, NULL);
+      location_len = JSStringGetMaximumUTF8CStringSize (location_str);
+      location = g_malloc0(location_len);
+      JSStringGetUTF8CString (location_str, location, location_len);
+
+      install_manifest_data->install_origin = get_origin (location);
+      g_free (location);
+    } else {
+      install_manifest_data->install_origin = NULL;
+    }
+  }
+
+  request = webkit_network_request_new (url);
+  download = webkit_download_new (request);
+  g_object_unref (request);
+
+	tmp_filename = ephy_file_tmp_filename ("ephy-download-XXXXXX", NULL);
+	destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
+	destination_uri = g_filename_to_uri (destination, NULL, NULL);
+  webkit_download_set_destination_uri (download, destination_uri);
+  install_manifest_data->local_path = g_strdup (destination_uri);
+	g_free (destination);
+	g_free (destination_uri);
+	g_free (tmp_filename);
+
+  g_signal_connect (G_OBJECT (download), "notify::status",
+                    G_CALLBACK (mozapp_install_manifest_download_status_changed_cb), install_manifest_data);
+
+  webkit_download_start (download);
+
+  return NULL;
+}
+
 static const JSStaticFunction mozapps_class_staticfuncs[] =
 {
 { "amInstalled", mozapps_am_installed, kJSPropertyAttributeDontDelete | kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontEnum },
+{ "install", mozapps_install, kJSPropertyAttributeDontDelete | kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontEnum },
 { NULL, NULL, 0 }
 };
 
