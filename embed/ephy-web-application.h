@@ -122,7 +122,7 @@ gboolean            ephy_web_application_is_mozilla_webapp (EphyWebApplication *
 GList * ephy_web_application_get_applications (void);
 EphyWebApplication * ephy_web_application_from_name (const char *name);
 GList * ephy_web_application_get_applications_from_origin (const char *origin);
-/* GList * ephy_web_application_get_applications_from_install_origin (const char *install_origin); */
+GList * ephy_web_application_get_applications_from_install_origin (const char *install_origin);
 void    ephy_web_application_free_applications_list (GList *applications);
 char * ephy_web_application_get_profile_dir_from_name (const char *name);
 

@@ -994,6 +994,29 @@ ephy_web_application_get_applications_from_origin (const char *origin)
   return origin_apps;
 }
 
+GList *
+ephy_web_application_get_applications_from_install_origin (const char *origin)
+{
+  GList *applications, *node;
+  GList *origin_apps;
+
+  applications = ephy_web_application_get_applications ();
+
+  origin_apps = NULL;
+  for (node = applications; node != NULL; node = g_list_next (node)) {
+    EphyWebApplication *app = (EphyWebApplication *) node->data;
+
+    if (g_strcmp0 (ephy_web_application_get_install_origin (app), origin) == 0) {
+      g_object_ref (app);
+      origin_apps = g_list_append (origin_apps, app);
+    }
+  }
+  
+  ephy_web_application_free_applications_list (applications);
+
+  return origin_apps;
+}
+
 void
 ephy_web_application_free_applications_list (GList *applications)
 {

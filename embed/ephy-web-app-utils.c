@@ -35,6 +35,8 @@
 #include <webkit/webkit.h>
 #include <stdlib.h>
 
+#define ERROR_QUARK (g_quark_from_static_string ("ephy-web-application-error"))
+
 static char *
 get_origin (const char *url)
 {
@@ -729,34 +731,13 @@ static void mozapps_finalize_cb(JSObjectRef object)
 /* ... */
 }
 
-static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const char *origin)
+static JSObjectRef
+mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *app, GError **error)
 {
-  EphyWebApplication *app;
-
-  JSObjectRef result = NULL;
-  GFile *manifest_file;
-  char *manifest_contents = NULL;
+  GFile *manifest_file = NULL;
   gboolean is_ok = TRUE;
-  GError *err = NULL;
-  char *profile_dir = NULL;
-
-  app = ephy_web_application_new ();
-  if (!ephy_web_application_load (app, ephy_dot_dir (), NULL)) {
-    GList *origin_applications, *node;
-    g_object_unref (app);
-    app = NULL;
-    origin_applications = ephy_web_application_get_applications_from_origin (origin);
-    for (node = origin_applications; node != NULL; node = g_list_next (node)) {
-      if (ephy_web_application_is_mozilla_webapp (EPHY_WEB_APPLICATION (node->data))) {
-        app = EPHY_WEB_APPLICATION (node->data);
-        g_object_ref (app);
-        break;
-      }
-    }
-    ephy_web_application_free_applications_list (origin_applications);
-  }
-
-  is_ok = (app != NULL);
+  char *manifest_contents = NULL;
+  JSObjectRef result = NULL;
 
   if (is_ok) {
     char *manifest_path;
@@ -765,9 +746,12 @@ static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const c
     g_free (manifest_path);
     
     is_ok = g_file_query_exists (manifest_file, NULL);
+    if (!is_ok) {
+      g_set_error (error, ERROR_QUARK, 0, "Manifest doesn't exist for this application");
+    }
   }
   
-  if (is_ok) is_ok = g_file_load_contents (manifest_file, NULL, &manifest_contents, NULL, NULL, &err);
+  if (is_ok) is_ok = g_file_load_contents (manifest_file, NULL, &manifest_contents, NULL, NULL, error);
 
   if (is_ok) {
     GFileInfo *metadata_info;
@@ -783,11 +767,12 @@ static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const c
 
     JSObjectSetProperty (context, result, 
                          JSStringCreateWithUTF8CString ("origin"),
-                         JSValueMakeString (context, JSStringCreateWithUTF8CString (origin)), 
+                         JSValueMakeString (context, JSStringCreateWithUTF8CString (ephy_web_application_get_origin(app))), 
                          kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
                          NULL);
     
-    metadata_info = g_file_query_info (manifest_file, G_FILE_ATTRIBUTE_TIME_MODIFIED, 0, NULL, NULL);
+    metadata_info = g_file_query_info (manifest_file, G_FILE_ATTRIBUTE_TIME_MODIFIED, 0, NULL, error);
+    is_ok = (metadata_info != NULL);
     created = g_file_info_get_attribute_uint64 (metadata_info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
     
     JSObjectSetProperty (context, result, 
@@ -826,9 +811,40 @@ static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const c
                          kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
                          NULL);
   }
-
+  
   g_free (manifest_contents);
-  g_free (profile_dir);
+  if (manifest_file) g_object_unref (manifest_file);
+  
+  return result;
+}
+
+static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const char *origin, GError **error)
+{
+  EphyWebApplication *app;
+  JSObjectRef result = NULL;
+
+  app = ephy_web_application_new ();
+  if (!ephy_web_application_load (app, ephy_dot_dir (), NULL)) {
+    GList *origin_applications, *node;
+    g_object_unref (app);
+    app = NULL;
+    origin_applications = ephy_web_application_get_applications_from_origin (origin);
+    for (node = origin_applications; node != NULL; node = g_list_next (node)) {
+      if (ephy_web_application_is_mozilla_webapp (EPHY_WEB_APPLICATION (node->data))) {
+        app = EPHY_WEB_APPLICATION (node->data);
+        g_object_ref (app);
+        break;
+      }
+    }
+    ephy_web_application_free_applications_list (origin_applications);
+  }
+
+  if (app == NULL) {
+    g_set_error (error, ERROR_QUARK, 0, "App does not exist");
+  } else {
+    result = mozapps_app_object_from_application (context, app, error);
+    g_object_unref (app);
+  }
   
   return result;
 }
@@ -886,13 +902,119 @@ mozapps_am_installed (JSContextRef context,
     if (origin == NULL) {
       goto amInstalledFinish;
     } else {
-      callback_parameter = mozapps_app_object_from_origin (context, origin);
+      callback_parameter = mozapps_app_object_from_origin (context, origin, NULL);
     }
     
     g_warning("%s: %s", __FUNCTION__, origin);
     g_free (origin);
 
   amInstalledFinish:
+
+    if (callback_parameter == NULL) {
+      callback_parameter = JSValueMakeNull (context);
+    }
+    callback_arguments[0] = callback_parameter;
+    
+    JSObjectCallAsFunction (context, object_ref, NULL, 1, callback_arguments, NULL);
+  }
+
+  return NULL;
+}
+
+static JSObjectRef mozapps_app_objects_from_install_origin (JSContextRef context, const char *origin, GError **error)
+{
+  JSObjectRef result = NULL;
+  GList *origin_applications, *node;
+  GList *js_objects_list = NULL;
+  int array_count;
+  JSValueRef *array_arguments = NULL;
+
+  origin_applications = ephy_web_application_get_applications_from_install_origin (origin);
+  for (node = origin_applications; node != NULL; node = g_list_next (node)) {
+    EphyWebApplication *app = (EphyWebApplication *) node->data;
+    JSObjectRef app_object;
+
+    app_object = mozapps_app_object_from_application (context, app, error);
+    if (app_object != NULL) {
+      js_objects_list = g_list_append (js_objects_list, app_object);
+    }
+  }
+  ephy_web_application_free_applications_list (origin_applications);
+
+  array_count = g_list_length (js_objects_list);
+  if (array_count > 0) {
+    int i = 0;
+    array_arguments = g_malloc0 (sizeof(JSValueRef *) * array_count);
+    for (node = js_objects_list; node != NULL; node = g_list_next (node)) {
+      array_arguments[i] = (JSValueRef) node->data;
+      i++;
+    }
+  }
+  result = JSObjectMakeArray (context, array_count, array_arguments, NULL);
+
+  return result;
+}
+
+static JSValueRef
+mozapps_get_installed_by (JSContextRef context,
+                          JSObjectRef function,
+                          JSObjectRef thisObject,
+                          size_t argumentCount,
+                          const JSValueRef arguments[],
+                          JSValueRef *exception)
+{
+  // TODO: create exception
+  if (argumentCount != 1) {
+    return NULL;
+  }
+  if (!JSValueIsObject (context, arguments[0])) {
+    return NULL;
+  } else {
+    JSObjectRef object_ref;
+    JSStringRef script_ref;
+    JSValueRef location_value;
+    JSStringRef location_str;
+    char *location;
+    int location_len;
+    SoupURI *uri, *host_uri;
+    char *origin;
+    JSValueRef callback_parameter = NULL;
+    JSValueRef callback_arguments[1];
+
+    object_ref = JSValueToObject (context, arguments[0], exception);
+    if (object_ref == NULL || !JSObjectIsFunction (context, object_ref)) {
+      return NULL;
+    }
+
+    script_ref = JSStringCreateWithUTF8CString ("window.location.href");
+
+    location_value = JSEvaluateScript (context, script_ref, NULL, NULL, 0, exception);
+    if (!JSValueIsString (context, location_value)) {
+      goto getInstalledByFinish;
+    }
+    location_str = JSValueToStringCopy (context, location_value, NULL);
+    location_len = JSStringGetMaximumUTF8CStringSize (location_str);
+    location = g_malloc0(location_len);
+    JSStringGetUTF8CString (location_str, location, location_len);
+
+    uri = soup_uri_new (location);
+    host_uri = soup_uri_copy_host (uri);
+    origin = soup_uri_to_string (host_uri, FALSE);
+
+    soup_uri_free (host_uri);
+    soup_uri_free (uri);
+    g_free (location);
+
+    if (origin == NULL) {
+      goto getInstalledByFinish;
+    } else {
+      callback_parameter = mozapps_app_objects_from_install_origin (context, origin, NULL);
+    }
+    
+    g_warning("%s: %s", __FUNCTION__, origin);
+    g_free (origin);
+
+  getInstalledByFinish:
 
     if (callback_parameter == NULL) {
       callback_parameter = JSValueMakeNull (context);
@@ -967,7 +1089,7 @@ mozapps_install (JSContextRef context,
   EphyMozAppInstallManifestData *install_manifest_data;
 	char *destination, *destination_uri, *tmp_filename;
 
-  if (argumentCount < 1 || argumentCount > 2) {
+  if (argumentCount < 1 || argumentCount > 4) {
     return NULL;
   }
   if (!JSValueIsString (context, arguments[0])) {
@@ -1046,6 +1168,7 @@ static const JSStaticFunction mozapps_class_staticfuncs[] =
 {
 { "amInstalled", mozapps_am_installed, kJSPropertyAttributeDontDelete | kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontEnum },
 { "install", mozapps_install, kJSPropertyAttributeDontDelete | kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontEnum },
+{ "getInstalledBy", mozapps_get_installed_by, kJSPropertyAttributeDontDelete | kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontEnum },
 { NULL, NULL, 0 }
 };
 
