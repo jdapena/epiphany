@@ -24,6 +24,7 @@
 
 #include "ephy-debug.h"
 #include "ephy-file-helpers.h"
+#include "ephy-web-application.h"
 
 #include <glib/gstdio.h>
 #include <glib/gi18n.h>
@@ -119,7 +120,7 @@ ephy_web_application_get_profile_directory (const char *name)
   }
 
   app_dir = g_strconcat (EPHY_WEB_APP_PREFIX, encoded, NULL);
-  profile_dir = g_build_filename (ephy_dot_dir (), app_dir, NULL);
+  profile_dir = g_build_filename (ephy_apps_dot_dir (), app_dir, NULL);
   g_free (encoded);
   g_free (app_dir);
 
@@ -215,10 +216,8 @@ create_desktop_and_metadata_files (const char *address,
   char *launch_path;
   SoupURI *uri = NULL, *host_uri = NULL;
   char *data = NULL;
-  char *filename, *apps_path, *file_path = NULL;
-  char *link_path;
+  char *apps_path, *file_path = NULL;
   char *wm_class;
-  GFile *link;
   GError *error = NULL;
 
   g_return_val_if_fail (profile_dir, NULL);
@@ -262,7 +261,7 @@ create_desktop_and_metadata_files (const char *address,
     char *path;
     GFile *image;
 
-    path = g_build_filename (profile_dir, EPHY_WEB_APP_ICON_NAME, NULL);
+    path = g_build_filename (profile_dir, EPHY_WEB_APPLICATION_APP_ICON, NULL);
     image = g_file_new_for_path (path);
 
     stream = (GOutputStream*)g_file_create (image, 0, NULL, NULL);
@@ -278,8 +277,7 @@ create_desktop_and_metadata_files (const char *address,
   g_key_file_set_value (desktop_file, "Desktop Entry", "StartupWMClass", wm_class);
 
   data = g_key_file_to_data (metadata_file, NULL, NULL);
-  filename = g_strconcat (wm_class, ".metadata", NULL);
-  file_path = g_build_filename (profile_dir, filename, NULL);
+  file_path = g_build_filename (profile_dir, EPHY_WEB_APPLICATION_METADATA_FILE, NULL);
   g_key_file_free (metadata_file);
 
   g_file_set_contents (file_path, data, -1, NULL);
@@ -287,9 +285,7 @@ create_desktop_and_metadata_files (const char *address,
   g_free (data);
 
   data = g_key_file_to_data (desktop_file, NULL, NULL);
-  filename = g_strconcat (wm_class, ".desktop", NULL);
-  g_free (wm_class);
-  file_path = g_build_filename (profile_dir, filename, NULL);
+  file_path = g_build_filename (profile_dir, EPHY_WEB_APPLICATION_DESKTOP_FILE, NULL);
   g_key_file_free (desktop_file);
 
   if (!g_file_set_contents (file_path, data, -1, NULL)) {
@@ -301,7 +297,11 @@ create_desktop_and_metadata_files (const char *address,
    * pick up this application. */
   apps_path = g_build_filename (g_get_user_data_dir (), "applications", NULL);
   if (ephy_ensure_dir_exists (apps_path, &error)) {
+    char *filename, *link_path;
+    GFile *link;
+    filename = g_strconcat (wm_class, ".desktop", NULL);
     link_path = g_build_filename (apps_path, filename, NULL);
+    g_free (filename);
     link = g_file_new_for_path (link_path);
     g_free (link_path);
     g_file_make_symbolic_link (link, file_path, NULL, NULL);
@@ -310,8 +310,8 @@ create_desktop_and_metadata_files (const char *address,
     g_warning ("Error creating application symlink: %s", error->message);
     g_error_free (error);
   }
+  g_free (wm_class);
   g_free (apps_path);
-  g_free (filename);
 
 out:
   g_free (wm_class);
@@ -410,147 +410,6 @@ out:
     g_free (profile_dir);
 
   return desktop_file_path;
-}
-
-/**
- * ephy_web_application_get_application_list:
- *
- * Gets a list of the currently installed web applications.
- * Free the returned GList with
- * ephy_web_application_free_application_list.
- *
- * Returns: (transfer-full): a #GList of #EphyWebApplication objects
- **/
-GList *
-ephy_web_application_get_application_list ()
-{
-  GFileEnumerator *children = NULL;
-  GFileInfo *info;
-  GList *applications = NULL;
-  GFile *dot_dir;
-
-  dot_dir = g_file_new_for_path (ephy_dot_dir ());
-  children = g_file_enumerate_children (dot_dir,
-                                        "standard::name",
-                                        0, NULL, NULL);
-  g_object_unref (dot_dir);
-
-  info = g_file_enumerator_next_file (children, NULL, NULL);
-  while (info) {
-    EphyWebApplication *app;
-    const char *name;
-    glong prefix_length = g_utf8_strlen (EPHY_WEB_APP_PREFIX, -1);
-
-    name = g_file_info_get_name (info);
-    if (g_str_has_prefix (name, EPHY_WEB_APP_PREFIX)) {
-      char *profile_dir;
-      guint64 created;
-      GDate *date;
-      char *metadata_file, *metadata_file_path;
-      char *contents;
-      GFileInfo *metadata_info;
-      GFile *file;
-
-      app = g_slice_new0 (EphyWebApplication);
-
-      profile_dir = g_build_filename (ephy_dot_dir (), name, NULL);
-      app->icon_url = g_build_filename (profile_dir, EPHY_WEB_APP_ICON_NAME, NULL);
-
-      metadata_file = g_strconcat (name + prefix_length, ".metadata", NULL);
-      metadata_file_path = g_build_filename (profile_dir, metadata_file, NULL);
-      if (g_file_get_contents (metadata_file_path, &contents, NULL, NULL)) {
-        GKeyFile *key;
-
-        key = g_key_file_new ();
-        g_key_file_load_from_data (key, contents, -1, 0, NULL);
-
-        app->name = g_key_file_get_string (key, "Application", "Name", NULL);
-        app->origin = g_key_file_get_string (key, "Application", "Origin", NULL);
-        app->launch_path = g_key_file_get_string (key, "Application", "LaunchPath", NULL);
-        app->description = g_key_file_get_string (key, "Application", "Description", NULL);
-        app->profile_dir = g_strdup (profile_dir);
-
-        g_key_file_free (key);
-
-        file = g_file_new_for_path (metadata_file_path);
-
-        /* FIXME: this should use TIME_CREATED but it does not seem to be working. */
-        metadata_info = g_file_query_info (file, G_FILE_ATTRIBUTE_TIME_MODIFIED, 0, NULL, NULL);
-        created = g_file_info_get_attribute_uint64 (metadata_info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
-
-        date = g_date_new ();
-        g_date_set_time_t (date, (time_t)created);
-        g_date_strftime (app->install_date, 127, "%x", date);
-
-        g_date_free (date);
-        g_object_unref (file);
-        g_object_unref (metadata_info);
-
-        applications = g_list_append (applications, app);
-      }
-
-      g_free (contents);
-      g_free (metadata_file);
-      g_free (profile_dir);
-      g_free (metadata_file_path);
-
-    }
-
-    g_object_unref (info);
-
-    info = g_file_enumerator_next_file (children, NULL, NULL);
-  }
-
-  g_object_unref (children);
-
-  return applications;
-}
-
-static void
-ephy_web_application_free (EphyWebApplication *app)
-{
-  g_free (app->name);
-  g_free (app->icon_url);
-  g_free (app->origin);
-  g_free (app->launch_path);
-  g_free (app->profile_dir);
-  g_slice_free (EphyWebApplication, app);
-}
-
-/**
- * ephy_web_application_free_application_list:
- * @list: an #EphyWebApplication GList
- *
- * Frees a @list as given by ephy_web_application_get_application_list.
- **/
-void
-ephy_web_application_free_application_list (GList *list)
-{
-  GList *p;
-
-  for (p = list; p; p = p->next)
-    ephy_web_application_free ((EphyWebApplication*)p->data);
-
-  g_list_free (list);
-}
-
-/**
- * ephy_web_application_exists:
- * @name: the potential name of the web application
- *
- * Returns: whether an application with @name exists.
- **/
-gboolean
-ephy_web_application_exists (const char *name)
-{
-  char *profile_dir;
-  gboolean profile_exists;
-
-  profile_dir = ephy_web_application_get_profile_directory (name);
-  profile_exists = g_file_test (profile_dir, G_FILE_TEST_IS_DIR);
-  g_free (profile_dir);
-
-  return profile_exists;
 }
 
 typedef struct {
@@ -840,7 +699,7 @@ mozapp_install_cb (gint response,
       char *manifest_install_path;
 
       origin_manifest = g_file_new_for_path (mozapp_install_data->manifest_path);
-      manifest_install_path = g_build_filename (profile_dir, "webapp.manifest", NULL);
+      manifest_install_path = g_build_filename (profile_dir, EPHY_WEB_APPLICATION_MOZILLA_MANIFEST, NULL);
       destination_manifest = g_file_new_for_path (manifest_install_path);
 
       result = g_file_copy (origin_manifest, destination_manifest, 
@@ -856,7 +715,7 @@ mozapp_install_cb (gint response,
     if (result && mozapp_install_data->receipt) {
       char *receipt_path;
 
-      receipt_path = g_build_filename (profile_dir, "webapp.receipt", NULL);
+      receipt_path = g_build_filename (profile_dir, EPHY_WEB_APPLICATION_MOZILLA_RECEIPT, NULL);
 
       result = g_file_set_contents (receipt_path, mozapp_install_data->receipt, -1, &err);
 
@@ -864,13 +723,24 @@ mozapp_install_cb (gint response,
     }
 
     if (result && mozapp_install_data->install_origin) {
-      char *install_origin_path;
+      char *metadata_file_path;
+      GKeyFile *metadata_keys;
+      char *contents;
 
-      install_origin_path = g_build_filename (profile_dir, "webapp.install-origin", NULL);
+      metadata_file_path = g_build_filename (profile_dir, EPHY_WEB_APPLICATION_METADATA_FILE, NULL);
+      metadata_keys = g_key_file_new ();
+      g_key_file_load_from_file (metadata_keys, metadata_file_path,
+                                 G_KEY_FILE_KEEP_COMMENTS | G_KEY_FILE_KEEP_TRANSLATIONS, NULL);
 
-      result = g_file_set_contents (install_origin_path, mozapp_install_data->install_origin, -1, &err);
+      g_key_file_set_value (metadata_keys, "Application", "InstallOrigin", mozapp_install_data->install_origin);
 
-      g_free (install_origin_path);
+      contents = g_key_file_to_data (metadata_keys, NULL, NULL);
+
+      result = g_file_set_contents (metadata_file_path, contents, -1, &err);
+
+      g_free (contents);
+      g_key_file_free (metadata_keys);
+      g_free (metadata_file_path);
     }
   }
 
@@ -1026,39 +896,42 @@ static void mozapps_finalize_cb(JSObjectRef object)
 
 static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const char *origin)
 {
+  EphyWebApplication *app;
+
   JSObjectRef result = NULL;
-  char *manifest_path;
   GFile *manifest_file;
   char *manifest_contents = NULL;
   gboolean is_ok = TRUE;
   GError *err = NULL;
   char *profile_dir = NULL;
 
-  manifest_path = g_build_filename (ephy_dot_dir (), "webapp.manifest", NULL);
-  manifest_file = g_file_new_for_path (manifest_path);
-  g_free (manifest_path);
-
-  is_ok = g_file_query_exists (manifest_file, NULL);
-
-  if (is_ok) {
-    profile_dir = g_strdup (ephy_dot_dir ());
-  } else {
-    GList *apps, *node;
-
-    apps = ephy_web_application_get_application_list ();
-    for (node = apps; node != NULL; node = g_list_next (node)) {
-      EphyWebApplication *app = (EphyWebApplication *) node->data;
-      if (g_strcmp0 (app->origin, origin) == 0) {
-        manifest_path = g_build_filename (app->profile_dir, "webapp.manifest", NULL);
-        profile_dir = g_strdup (app->profile_dir);
-        manifest_file = g_file_new_for_path (manifest_path);
-
-        is_ok = g_file_query_exists (manifest_file, NULL);
+  app = ephy_web_application_new ();
+  if (!ephy_web_application_load (app, ephy_dot_dir (), NULL)) {
+    GList *origin_applications, *node;
+    g_object_unref (app);
+    app = NULL;
+    origin_applications = ephy_web_application_get_applications_from_origin (origin);
+    for (node = origin_applications; node != NULL; node = g_list_next (node)) {
+      if (ephy_web_application_is_mozilla_webapp (EPHY_WEB_APPLICATION (node->data))) {
+        app = EPHY_WEB_APPLICATION (node->data);
+        g_object_ref (app);
         break;
       }
     }
+    ephy_web_application_free_applications_list (origin_applications);
   }
 
+  is_ok = (app != NULL);
+
+  if (is_ok) {
+    char *manifest_path;
+    manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_MOZILLA_MANIFEST);
+    manifest_file = g_file_new_for_path (manifest_path);
+    g_free (manifest_path);
+    
+    is_ok = g_file_query_exists (manifest_file, NULL);
+  }
+  
   if (is_ok) is_ok = g_file_load_contents (manifest_file, NULL, &manifest_contents, NULL, NULL, &err);
 
   if (is_ok) {
@@ -1066,7 +939,7 @@ static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const c
     guint64 created;
 
     result = JSObjectMake (context, NULL, NULL);
-
+    
     JSObjectSetProperty (context, result, 
                          JSStringCreateWithUTF8CString ("manifest"),
                          JSValueMakeFromJSONString (context, JSStringCreateWithUTF8CString (manifest_contents)), 
@@ -1078,23 +951,23 @@ static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const c
                          JSValueMakeString (context, JSStringCreateWithUTF8CString (origin)), 
                          kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
                          NULL);
-
+    
     metadata_info = g_file_query_info (manifest_file, G_FILE_ATTRIBUTE_TIME_MODIFIED, 0, NULL, NULL);
     created = g_file_info_get_attribute_uint64 (metadata_info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
-
+    
     JSObjectSetProperty (context, result, 
                          JSStringCreateWithUTF8CString ("install_time"),
                          JSValueMakeNumber (context, created), 
                          kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
                          NULL);
-
+    
   }
 
   if (is_ok) {
     char *receipt_path;
     GFile *receipt_file;
-
-    receipt_path = g_build_filename (profile_dir, "webapp.receipt", NULL);
+    
+    receipt_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_MOZILLA_RECEIPT);
     receipt_file = g_file_new_for_path (receipt_path);
     g_free (receipt_path);
 
@@ -1111,25 +984,12 @@ static JSObjectRef mozapps_app_object_from_origin (JSContextRef context, const c
     g_object_unref (receipt_file);
   }
 
-  if (is_ok) {
-    char *install_origin_path;
-    GFile *install_origin_file;
-
-    install_origin_path = g_build_filename (profile_dir, "webapp.install-origin", NULL);
-    install_origin_file = g_file_new_for_path (install_origin_path);
-    g_free (install_origin_path);
-
-    if (g_file_query_exists (install_origin_file, NULL)) {
-      char *install_origin_contents;
-      if (g_file_load_contents (install_origin_file, NULL, &install_origin_contents, NULL, NULL, NULL)) {
-        JSObjectSetProperty (context, result, 
-                             JSStringCreateWithUTF8CString ("installOrigin"),
-                             JSValueMakeString (context, JSStringCreateWithUTF8CString (install_origin_contents)), 
-                             kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                             NULL);
-      }
-    }
-    g_object_unref (install_origin_file);
+  if (is_ok && ephy_web_application_get_install_origin (app) != NULL) {
+    JSObjectSetProperty (context, result, 
+                         JSStringCreateWithUTF8CString ("installOrigin"),
+                         JSValueMakeString (context, JSStringCreateWithUTF8CString (ephy_web_application_get_install_origin (app))), 
+                         kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                         NULL);
   }
 
   g_free (manifest_contents);

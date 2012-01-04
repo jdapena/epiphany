@@ -35,16 +35,6 @@ typedef gboolean (*EphyWebApplicationInstallCallback) (gint dialog_response,
 						       const char *profile_dir,
 						       gpointer userdata);
 
-typedef struct {
-    char *name;
-    char *icon_url;
-    char *origin;
-    char *description;
-    char *launch_path;
-    char install_date[128];
-    char *profile_dir;
-} EphyWebApplication;
-
 #define EPHY_WEB_APP_PREFIX "app-"
 #define EPHY_WEB_APP_ICON_NAME "app-icon.png"
 

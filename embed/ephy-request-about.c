@@ -26,6 +26,7 @@
 #include "ephy-file-helpers.h"
 #include "ephy-smaps.h"
 #include "ephy-web-app-utils.h"
+#include "ephy-web-application.h"
 
 #include <gio/gio.h>
 #include <glib/gi18n.h>
@@ -180,29 +181,35 @@ ephy_request_about_send (SoupRequest          *request,
 
     g_string_append (data_str, "<form><table>");
 
-    applications = ephy_web_application_get_application_list ();
+    applications = ephy_web_application_get_applications ();
     for (p = applications; p; p = p->next) {
       char *img_data = NULL, *img_data_base64 = NULL;
       gsize data_length;
       EphyWebApplication *app = (EphyWebApplication*)p->data;
+      char *icon_url;
+
+      icon_url = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_APP_ICON);
       
-      if (g_file_get_contents (app->icon_url, &img_data, &data_length, NULL))
+      if (g_file_get_contents (icon_url, &img_data, &data_length, NULL))
         img_data_base64 = g_base64_encode ((guchar*)img_data, data_length);
+      g_free (icon_url);
       g_string_append_printf (data_str, "<tbody><tr><td class=\"icon\"><img width=64 height=64 src=\"data:image/png;base64,%s\">" \
                               " </img></td><td class=\"data\"><div class=\"appname\">%s</div><div class=\"appurl\"><span class=\"apporigin\">%s</span><span class=\"applaunchpath\">%s</span></div><div class=\"appdescription\">%s</div><div class=\"appdate\">%s %s</div></td><td class=\"input\"><input type=\"submit\" value=\"Delete\" id=\"%s\"></td></tr>",
-                              img_data_base64, 
-                              app->name?app->name:"", app->origin?app->origin:"",
-                              app->launch_path?app->launch_path:"", app->description?app->description:"",
+                              img_data_base64,
+                              ephy_web_application_get_name (app)?ephy_web_application_get_name (app):"",
+                              ephy_web_application_get_origin (app)?ephy_web_application_get_origin (app):"",
+                              ephy_web_application_get_launch_path (app)?ephy_web_application_get_launch_path (app):"",
+                              ephy_web_application_get_description (app)?ephy_web_application_get_description (app):"",
                               /* Note for translators: this refers to the installation date. */
-                              _("Installed on:"), app->install_date,
-                              app->name?app->name:"");
+                              _("Installed on:"), ephy_web_application_get_install_date (app),
+                              ephy_web_application_get_name (app)?ephy_web_application_get_name (app):"");
       g_free (img_data_base64);
       g_free (img_data);
     }
 
     g_string_append (data_str, "</form></table></body>");
     
-    ephy_web_application_free_application_list (applications);
+    ephy_web_application_free_applications_list (applications);
   }
 
   g_string_append (data_str, "</html>");
