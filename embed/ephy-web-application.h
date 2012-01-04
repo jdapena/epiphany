@@ -48,7 +48,6 @@ typedef enum
   EPHY_WEB_APPLICATION_EMPTY,
   EPHY_WEB_APPLICATION_LOADING,
   EPHY_WEB_APPLICATION_TEMPORARY,
-  EPHY_WEB_APPLICATION_INSTALLING,
   EPHY_WEB_APPLICATION_INSTALLED
 } EphyWebApplicationStatus;
 
@@ -57,6 +56,7 @@ typedef enum
 #define EPHY_WEB_APPLICATION_MOZILLA_MANIFEST "ephy-web-app.manifest"
 #define EPHY_WEB_APPLICATION_MOZILLA_RECEIPT "ephy-web-app.receipt"
 #define EPHY_WEB_APPLICATION_APP_ICON "app-icon.png"
+#define EPHY_WEB_APPLICATION_COOKIE_JAR "cookies.sqlite"
 
 typedef struct _EphyWebApplication EphyWebApplication;
 typedef struct _EphyWebApplicationClass EphyWebApplicationClass;
@@ -78,8 +78,13 @@ struct _EphyWebApplicationClass
 GType         ephy_web_application_get_type              (void) G_GNUC_CONST;
 
 EphyWebApplication *ephy_web_application_new             (void);
-gboolean            ephy_web_application_load            (EphyWebApplication *app,
+gboolean                ephy_web_application_load        (EphyWebApplication *app,
                                                           const char *profile_dir,
+                                                          GError **error);
+gboolean                ephy_web_application_delete      (EphyWebApplication *app,
+                                                          GError **error);
+gboolean                ephy_web_application_install     (EphyWebApplication *app,
+                                                          GdkPixbuf *icon,
                                                           GError **error);
 
 const char *        ephy_web_application_get_name        (EphyWebApplication *app);
@@ -98,6 +103,9 @@ const char *        ephy_web_application_get_launch_path (EphyWebApplication *ap
 void                ephy_web_application_set_launch_path (EphyWebApplication *app,
                                                           const char *launch_path);
 
+void                ephy_web_application_set_full_uri    (EphyWebApplication *app,
+                                                          const char *full_uri);
+
 EphyWebApplicationStatus ephy_web_application_get_status (EphyWebApplication *app);
 void                ephy_web_application_set_status (EphyWebApplication *app,
                                                      EphyWebApplicationStatus status);
@@ -112,9 +120,15 @@ gboolean            ephy_web_application_is_mozilla_webapp (EphyWebApplication *
 
 
 GList * ephy_web_application_get_applications (void);
+EphyWebApplication * ephy_web_application_from_name (const char *name);
 GList * ephy_web_application_get_applications_from_origin (const char *origin);
 /* GList * ephy_web_application_get_applications_from_install_origin (const char *install_origin); */
 void    ephy_web_application_free_applications_list (GList *applications);
+char * ephy_web_application_get_profile_dir_from_name (const char *name);
+
+/* SHOULD GET PRIVATE ONCE FINISHED */
+char *ephy_web_application_get_wm_class_from_app_title (const char *title);
+
 
 char *  ephy_apps_dot_dir (void);
 

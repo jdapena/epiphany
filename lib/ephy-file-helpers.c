@@ -777,7 +777,7 @@ ephy_file_launch_desktop_file (const char *filename,
 	GList *list = NULL;
 	gboolean ret;
 
-	app = g_desktop_app_info_new (filename);
+        app = g_desktop_app_info_new_from_filename (filename);
 	if (parameter)
 	{
 		file = g_file_new_for_path (parameter);

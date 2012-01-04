@@ -24,42 +24,31 @@
 #ifndef EPHY_WEB_APP_UTILS_H
 #define EPHY_WEB_APP_UTILS_H
 
+#include "ephy-web-application.h"
+
 #include <glib.h>
 #include <gtk/gtk.h>
 #include <JavaScriptCore/JavaScript.h>
 
 G_BEGIN_DECLS
 
-typedef gboolean (*EphyWebApplicationInstallCallback) (gint dialog_response, 
-						       const char *app_name,
-						       const char *profile_dir,
-						       gpointer userdata);
+typedef gboolean (*EphyWebApplicationInstallCallback) (gint dialog_response,
+                                                       EphyWebApplication *app,
+                                                       gpointer userdata);
 
 #define EPHY_WEB_APP_PREFIX "app-"
 #define EPHY_WEB_APP_ICON_NAME "app-icon.png"
 
 char    *ephy_web_application_create (const char *address, const char *name, const char *description, GdkPixbuf *icon);
 
-gboolean ephy_web_application_delete (const char *name);
-
-char    *ephy_web_application_get_profile_directory (const char *name);
-
-GList   *ephy_web_application_get_application_list (void);
-
-void     ephy_web_application_free_application_list (GList *list);
-
-gboolean ephy_web_application_exists (const char *name);
-
 void     ephy_web_application_show_install_dialog (GtkWindow *window,
-						   const char *address,
                                                    const char *dialog_title,
                                                    const char *install_action,
-                                                   const char *app_name,
-                                                   const char *app_description,
+                                                   EphyWebApplication *app,
                                                    const char *icon_href,
-						   GdkPixbuf *icon_pixbuf,
-						   EphyWebApplicationInstallCallback callback,
-						   gpointer userdata);
+                                                   GdkPixbuf *icon_pixbuf,
+                                                   EphyWebApplicationInstallCallback callback,
+                                                   gpointer userdata);
 
 void     ephy_web_application_install_manifest (GtkWindow *window,
 						const char *origin,

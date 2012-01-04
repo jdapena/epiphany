@@ -1841,10 +1841,17 @@ delete_web_app_cb (WebKitDOMHTMLElement *button,
   char *id = NULL;
 
   id = webkit_dom_html_element_get_id (button);
-  if (id)
-    ephy_web_application_delete (id);
+  if (id) {
+    EphyWebApplication *app;
 
-  g_free (id);
+    app = ephy_web_application_from_name (id);
+    if (app) {
+      ephy_web_application_delete (app, NULL);
+      g_object_unref (app);
+    }
+
+    g_free (id);
+  }
 
   return FALSE;
 }

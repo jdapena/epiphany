@@ -31,10 +31,24 @@
 
 #include <errno.h>
 #include <glib/gi18n.h>
+#include <glib/gstdio.h>
+#include <libsoup/soup-gnome.h>
 #include <string.h>
 
 #define ERROR_QUARK (g_quark_from_static_string ("ephy-web-application-error"))
 #define EPHY_WEB_APP_PREFIX "app-"
+#define EPHY_WEB_APP_DESKTOP_FILE_PREFIX "epiphany-"
+#define EPHY_TOOLBARS_XML_FILE "epiphany-toolbars-3.xml"
+
+#define EPHY_WEB_APP_TOOLBAR "<?xml version=\"1.0\"?>" \
+                             "<toolbars version=\"1.1\">" \
+                             "  <toolbar name=\"DefaultToolbar\" hidden=\"true\" editable=\"false\">" \
+                             "    <toolitem name=\"NavigationBack\"/>" \
+                             "    <toolitem name=\"NavigationForward\"/>" \
+                             "    <toolitem name=\"ViewReload\"/>" \
+                             "    <toolitem name=\"ViewCancel\"/>" \
+                             "  </toolbar>" \
+                             "</toolbars>"
 
 G_DEFINE_TYPE (EphyWebApplication, ephy_web_application, G_TYPE_OBJECT)
 
@@ -439,6 +453,281 @@ ephy_web_application_load (EphyWebApplication *app,
   return is_ok;
 }
 
+/**
+ * ephy_web_application_delete:
+ * @app: an #EphyWebApplication
+ * @error: return location for a #GError or %NULL
+ * 
+ * Deletes all the data associated with @app.
+ * 
+ * Returns: %TRUE if the @app was succesfully deleted, %FALSE otherwise
+ **/
+gboolean
+ephy_web_application_delete (EphyWebApplication *app, GError **error)
+{
+  char *desktop_file = NULL, *desktop_path = NULL;
+  char *wm_class;
+  GFile *profile = NULL, *launcher = NULL;
+  gboolean return_value = FALSE;
+
+  if (ephy_web_application_get_status (app) != EPHY_WEB_APPLICATION_INSTALLED) {
+    g_set_error (error, ERROR_QUARK, 0, "Tried to delete a non installed application");
+    goto out;
+  }
+
+  profile = g_file_new_for_path (ephy_web_application_get_profile_dir (app));
+  if (!ephy_file_delete_dir_recursively (profile, error))
+    goto out;
+  g_print ("Deleted application profile.\n");
+
+  wm_class = ephy_web_application_get_wm_class_from_app_title (ephy_web_application_get_name (app));
+  desktop_file = g_strconcat (wm_class, ".desktop", NULL);
+  g_free (wm_class);
+  desktop_path = g_build_filename (g_get_user_data_dir (), "applications", desktop_file, NULL);
+  launcher = g_file_new_for_path (desktop_path);
+  if (!g_file_delete (launcher, NULL, error))
+    goto out;
+  g_print ("Deleted application launcher.\n");
+
+  ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
+
+  return_value = TRUE;
+
+out:
+
+  if (profile)
+    g_object_unref (profile);
+
+  if (launcher)
+    g_object_unref (launcher);
+  g_free (desktop_file);
+  g_free (desktop_path);
+
+  return return_value;
+}
+
+static gboolean
+create_desktop_and_metadata_files (EphyWebApplication *app,
+                                   GdkPixbuf *icon,
+                                   GError **error)
+{
+  EphyWebApplicationPrivate *priv;
+  char *uri_string;
+  GKeyFile *desktop_file, *metadata_file;
+  char *exec_string;
+  char *data;
+  char *apps_path, *file_path;
+  char *wm_class;
+  gboolean is_ok = TRUE;
+
+  g_return_val_if_fail (EPHY_IS_WEB_APPLICATION (app), FALSE);
+  priv = app->priv;
+
+  desktop_file = g_key_file_new ();
+  metadata_file = g_key_file_new ();
+  
+  g_key_file_set_value (desktop_file, "Desktop Entry", "Name", priv->name);
+  g_key_file_set_value (metadata_file, "Application", "Name", priv->name);
+
+  if (priv->description)
+    g_key_file_set_value (metadata_file, "Application", "Description", priv->description);
+
+  uri_string = g_strconcat (priv->origin, priv->launch_path, NULL);
+  exec_string = g_strdup_printf ("epiphany --application-mode --profile=\"%s\" %s",
+				 priv->profile_dir, 
+                                 uri_string);
+  g_key_file_set_value (desktop_file, "Desktop Entry", "Exec", exec_string);
+  g_free (exec_string);
+  g_free (uri_string);
+
+  if (priv->launch_path) g_key_file_set_value (metadata_file, "Application", "LaunchPath", priv->launch_path);
+  g_key_file_set_value (metadata_file, "Application", "Origin", priv->origin);
+  if (priv->install_origin) g_key_file_set_value (metadata_file, "Application", "InstallOrigin", priv->install_origin);
+
+  g_key_file_set_value (desktop_file, "Desktop Entry", "StartupNotification", "true");
+  g_key_file_set_value (desktop_file, "Desktop Entry", "Terminal", "false");
+  g_key_file_set_value (desktop_file, "Desktop Entry", "Type", "Application");
+
+  if (icon) {
+    GOutputStream *stream;
+    char *path;
+    GFile *image;
+
+    path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_APP_ICON);
+    image = g_file_new_for_path (path);
+
+    stream = (GOutputStream*)g_file_create (image, 0, NULL, error);
+    is_ok = (stream != NULL);
+    if (is_ok) {
+      is_ok = gdk_pixbuf_save_to_stream (icon, stream, "png", NULL, NULL, error);
+    }
+
+    if (is_ok) {
+      g_key_file_set_value (desktop_file, "Desktop Entry", "Icon", path);
+      g_key_file_set_value (metadata_file, "Application", "Icon", path);
+    }
+
+    if (stream) g_object_unref (stream);
+    g_object_unref (image);
+    g_free (path);
+  }
+
+  wm_class = ephy_web_application_get_wm_class_from_app_title (priv->name);
+  g_key_file_set_value (desktop_file, "Desktop Entry", "StartupWMClass", wm_class);
+
+
+  data = g_key_file_to_data (metadata_file, NULL, NULL);
+  file_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_METADATA_FILE);
+  g_key_file_free (metadata_file);
+
+  if (is_ok) {
+    is_ok = g_file_set_contents (file_path, data, -1, error);
+  }
+  g_free (file_path);
+  g_free (data);
+
+  data = g_key_file_to_data (desktop_file, NULL, NULL);
+  file_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_DESKTOP_FILE);
+  g_key_file_free (desktop_file);
+
+  if (is_ok) {
+    is_ok = g_file_set_contents (file_path, data, -1, error);
+  }
+  g_free (data);
+
+  /* Create a symlink in XDG_DATA_DIR/applications for the Shell to
+   * pick up this application. */
+  apps_path = g_build_filename (g_get_user_data_dir (), "applications", NULL);
+  if (is_ok) {
+    is_ok = ephy_ensure_dir_exists (apps_path, error);
+  }
+  if (is_ok) {
+    char *filename, *link_path;
+    GFile *link;
+    filename = g_strconcat (wm_class, ".desktop", NULL);
+    link_path = g_build_filename (apps_path, filename, NULL);
+    g_free (filename);
+    link = g_file_new_for_path (link_path);
+    g_free (link_path);
+    is_ok = g_file_make_symbolic_link (link, file_path, NULL, NULL);
+    g_object_unref (link);
+  }
+  g_free (wm_class);
+  g_free (apps_path);
+
+  return is_ok;
+}
+
+static gboolean
+create_cookie_jar_for_domain (EphyWebApplication *app, GError **error)
+{
+  EphyWebApplicationPrivate *priv;
+  SoupSession *session;
+  GSList *cookies, *p;
+  SoupCookieJar *current_jar, *new_jar;
+  char *domain, *filename;
+  SoupURI *uri;
+
+  priv = app->priv;
+
+  /* Create the new cookie jar */
+  filename = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_COOKIE_JAR);
+  new_jar = (SoupCookieJar*)soup_cookie_jar_sqlite_new (filename, FALSE);
+  g_free (filename);
+
+  /* The app domain for the current uri */
+  uri = soup_uri_new (priv->origin);
+  domain = uri->host;
+
+  /* The current cookies */
+  session = webkit_get_default_session ();
+  current_jar = (SoupCookieJar*)soup_session_get_feature (session, SOUP_TYPE_COOKIE_JAR);
+  cookies = soup_cookie_jar_all_cookies (current_jar);
+
+  for (p = cookies; p; p = p->next) {
+    SoupCookie *cookie = (SoupCookie*)p->data;
+
+    if (g_str_has_suffix (cookie->domain, domain))
+      soup_cookie_jar_add_cookie (new_jar, cookie);
+    else
+      soup_cookie_free (cookie);
+  }
+
+  soup_uri_free (uri);
+  g_slist_free (cookies);
+
+  return TRUE;
+}
+
+/**
+ * ephy_web_application_install:
+ * @app: an #EphyWebApplication
+ * @icon: the icon for the new web application
+ * @error: a #GError pointer, or %NULL
+ * 
+ * Installs @app into desktop, using @icon as the app icon.
+ * 
+ * Returns: %TRUE if install was successful, %FALSE otherwise
+ **/
+gboolean
+ephy_web_application_install (EphyWebApplication *app,
+                              GdkPixbuf *icon,
+                              GError **error)
+{
+  EphyWebApplicationPrivate *priv;
+  char *profile_dir = NULL;
+  char *toolbar_path = NULL;
+  gboolean result = FALSE;
+
+  g_return_val_if_fail (EPHY_IS_WEB_APPLICATION (app), FALSE);
+  priv = app->priv;
+  if (ephy_web_application_get_status (app) != EPHY_WEB_APPLICATION_TEMPORARY)
+    goto out;
+
+  /* If there's already a WebApp profile for the contents of this
+   * uri, do nothing. */
+  g_free (priv->profile_dir);
+  priv->profile_dir = ephy_web_application_get_profile_dir_from_name (ephy_web_application_get_name (app));
+  if (g_file_test (profile_dir, G_FILE_TEST_IS_DIR)) {
+    g_set_error (error, ERROR_QUARK, 0, "Tried to overwrite an existing application");
+    goto out;
+  }
+
+  /* Create the profile directory, populate it. */
+  if (g_mkdir (priv->profile_dir, 488) == -1) {
+    g_set_error (error, ERROR_QUARK, 0, "Failed to create directory %s", profile_dir);
+    goto out;
+  }
+
+  /* Things we need in a WebApp's profile:
+     - Toolbar layout
+     - Our own cookies file, copying the relevant cookies for the
+       app's domain.
+  */
+  toolbar_path = g_build_filename (priv->profile_dir, EPHY_TOOLBARS_XML_FILE, NULL);
+  if (!g_file_set_contents (toolbar_path, EPHY_WEB_APP_TOOLBAR, -1, error))
+    goto out;
+
+  if (!create_cookie_jar_for_domain (app, error)) {
+    goto out;
+  }
+
+  /* Create the deskop file. */
+  if (!create_desktop_and_metadata_files (app, icon, error))
+    goto out;
+
+  g_object_notify (G_OBJECT (app), "profile-dir");
+  ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_INSTALLED);
+  result = TRUE;
+
+out:
+  if (toolbar_path)
+    g_free (toolbar_path);
+
+  return result;
+}
+
+
 static void
 ephy_web_application_finalize (GObject *object)
 {
@@ -710,4 +999,82 @@ ephy_web_application_free_applications_list (GList *applications)
 {
   g_list_foreach (applications, (GFunc) g_object_unref, NULL);
   g_list_free (applications);
+}
+
+char *
+ephy_web_application_get_profile_dir_from_name (const char *name)
+{
+  char *app_dir, *wm_class, *profile_dir;
+
+  wm_class = ephy_web_application_get_wm_class_from_app_title (name);
+  app_dir = g_strconcat (EPHY_WEB_APP_PREFIX, wm_class, NULL);
+  profile_dir = g_build_filename (ephy_apps_dot_dir (), app_dir, NULL);
+  g_free (wm_class);
+  g_free (app_dir);
+
+  return profile_dir;
+}
+
+EphyWebApplication *
+ephy_web_application_from_name (const char *name)
+{
+  char *profile_dir;
+  EphyWebApplication *result;
+
+  profile_dir = ephy_web_application_get_profile_dir_from_name (name);
+
+  result = ephy_web_application_new ();
+  if (!ephy_web_application_load (result, profile_dir, NULL)) {
+    g_object_unref (result);
+    result = NULL;
+  }
+  g_free (profile_dir);
+
+  return result;
+}
+
+/* This is necessary because of gnome-shell's guessing of a .desktop
+   filename from WM_CLASS property. */
+char *
+ephy_web_application_get_wm_class_from_app_title (const char *title)
+{
+  char *normal_title;
+  char *wm_class;
+  char *checksum;
+
+  normal_title = g_utf8_strdown (title, -1);
+  g_strdelimit (normal_title, " ", '-');
+  g_strdelimit (normal_title, G_DIR_SEPARATOR_S, '-');
+  checksum = g_compute_checksum_for_string (G_CHECKSUM_SHA1, title, -1);
+  wm_class = g_strconcat (EPHY_WEB_APP_DESKTOP_FILE_PREFIX, normal_title, "-", checksum, NULL);
+
+  g_free (checksum);
+  g_free (normal_title);
+
+  return wm_class;
+}
+
+void
+ephy_web_application_set_full_uri (EphyWebApplication *app,
+                                   const char *full_uri)
+{
+  EphyWebApplicationPrivate *priv;
+  SoupURI *uri, *host_uri;
+
+  priv = app->priv;
+
+  uri = soup_uri_new (full_uri);
+
+  g_free (priv->launch_path);
+  priv->launch_path = soup_uri_to_string (uri, TRUE);
+
+  host_uri = soup_uri_copy_host (uri);
+  g_free (priv->origin);
+  priv->origin = soup_uri_to_string (host_uri, FALSE);
+
+  soup_uri_free (uri);
+  soup_uri_free (host_uri);
+
+  g_object_notify (G_OBJECT (app), "origin");
+  g_object_notify (G_OBJECT (app), "launch-path");
 }

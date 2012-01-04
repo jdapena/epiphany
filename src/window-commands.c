@@ -385,29 +385,34 @@ window_cmd_file_save_as_application (GtkAction *action,
 	EphyWebView *view;
 	char *icon_href;
 	GdkPixbuf *snapshot;
+	EphyWebApplication *app;
 
-	embed = ephy_embed_container_get_active_child (EPHY_EMBED_CONTAINER (window));
-	g_return_if_fail (embed != NULL);
+        embed = ephy_embed_container_get_active_child (EPHY_EMBED_CONTAINER (window));
+        g_return_if_fail (embed != NULL);
 
-	view = EPHY_WEB_VIEW (EPHY_GET_WEBKIT_WEB_VIEW_FROM_EMBED (embed));
+        view = EPHY_WEB_VIEW (EPHY_GET_WEBKIT_WEB_VIEW_FROM_EMBED (embed));
 
-	icon_href = get_default_application_image (view);
-	snapshot = take_page_snapshot (view);
+        icon_href = get_default_application_image (view);
+        snapshot = take_page_snapshot (view);
 
-	ephy_web_application_show_install_dialog (GTK_WINDOW (window),
-						  webkit_web_view_get_uri (WEBKIT_WEB_VIEW (view)),
-						  _("Create Web Application"),
-						  _("Create"),
-						  ephy_web_view_get_title (view),
-						  NULL,
-						  icon_href,
-						  snapshot,
-						  NULL, NULL);
+        app = ephy_web_application_new ();
+        ephy_web_application_set_name (app, ephy_web_view_get_title (view));
+        ephy_web_application_set_full_uri (app, webkit_web_view_get_uri (WEBKIT_WEB_VIEW (view)));
+        ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
+					   
+        ephy_web_application_show_install_dialog (GTK_WINDOW (window),
+                                                  _("Create Web Application"),
+                                                  _("Create"),
+                                                  app,
+                                                  icon_href,
+                                                  snapshot,
+                                                  NULL, NULL);
+        g_object_unref (app);
+	
+        g_free (icon_href);
 
-	g_free (icon_href);
-
-	if (snapshot)
-		g_object_unref (snapshot);
+        if (snapshot)
+                g_object_unref (snapshot);
 }
 
 void

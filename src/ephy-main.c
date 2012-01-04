@@ -33,6 +33,7 @@
 #include "ephy-state.h"
 #include "ephy-string.h"
 #include "ephy-web-app-utils.h"
+#include "ephy-web-application.h"
 
 #include <errno.h>
 #include <gdk/gdkx.h>
@@ -438,7 +439,12 @@ main (int argc,
   /* Delete the requested web application, if any. Must happen after
    * ephy_file_helpers_init (). */
   if (application_to_delete) {
-    ephy_web_application_delete (application_to_delete);
+    EphyWebApplication *app;
+    app = ephy_web_application_from_name (application_to_delete);
+    if (app) {
+      ephy_web_application_delete (app, NULL);
+      g_object_unref (app);
+    }
     exit (0);
   }
 
