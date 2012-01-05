@@ -93,6 +93,12 @@ void                ephy_web_application_set_name        (EphyWebApplication *ap
 const char *        ephy_web_application_get_description (EphyWebApplication *app);
 void                ephy_web_application_set_description (EphyWebApplication *app,
                                                           const char *description);
+const char *        ephy_web_application_get_author      (EphyWebApplication *app);
+void                ephy_web_application_set_author      (EphyWebApplication *app,
+                                                          const char *author);
+const char *        ephy_web_application_get_author_url  (EphyWebApplication *app);
+void                ephy_web_application_set_author_url  (EphyWebApplication *app,
+                                                          const char *author_url);
 const char *        ephy_web_application_get_origin      (EphyWebApplication *app);
 void                ephy_web_application_set_origin      (EphyWebApplication *app,
                                                           const char *origin);

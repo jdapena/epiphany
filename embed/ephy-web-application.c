@@ -59,6 +59,8 @@ struct _EphyWebApplicationPrivate
 {
   char *name;
   char *description;
+  char *author;
+  char *author_url;
   char *origin;
   char *install_origin;
   char *launch_path;
@@ -72,6 +74,8 @@ enum
   PROP_0,
   PROP_NAME,
   PROP_DESCRIPTION,
+  PROP_AUTHOR,
+  PROP_AUTHOR_URL,
   PROP_ORIGIN,
   PROP_INSTALL_ORIGIN,
   PROP_LAUNCH_PATH,
@@ -98,6 +102,12 @@ ephy_web_application_get_property (GObject    *object,
     break;
   case PROP_DESCRIPTION:
     g_value_set_string (value, priv->description);
+    break;
+  case PROP_AUTHOR:
+    g_value_set_string (value, priv->author);
+    break;
+  case PROP_AUTHOR_URL:
+    g_value_set_string (value, priv->author_url);
     break;
   case PROP_ORIGIN:
     g_value_set_string (value, priv->origin);
@@ -138,6 +148,12 @@ ephy_web_application_set_property (GObject      *object,
     break;
   case PROP_DESCRIPTION:
     ephy_web_application_set_description (app, g_value_get_string (value));
+    break;
+  case PROP_AUTHOR:
+    ephy_web_application_set_author (app, g_value_get_string (value));
+    break;
+  case PROP_AUTHOR_URL:
+    ephy_web_application_set_author_url (app, g_value_get_string (value));
     break;
   case PROP_ORIGIN:
     ephy_web_application_set_origin (app, g_value_get_string (value));
@@ -219,6 +235,70 @@ ephy_web_application_set_description (EphyWebApplication *app,
   g_free (app->priv->description);
   app->priv->description = g_strdup (description);
   g_object_notify (G_OBJECT (app), "description");
+}
+
+/**
+ * ephy_web_application_get_author:
+ * @app: an #EphyWebApplication
+ *
+ * Obtains the author of the application.
+ *
+ * Returns: a string
+ **/
+const char *
+ephy_web_application_get_author (EphyWebApplication *app)
+{
+  return app->priv->author;
+}
+
+/**
+ * ephy_web_application_set_author:
+ * @app: an #EphyWebApplication
+ * @author: a string
+ *
+ * Sets the @author of @app. It's displayed in
+ * the about:applications list and also in the install
+ * dialog.
+ **/
+void
+ephy_web_application_set_author (EphyWebApplication *app,
+                                 const char *author)
+{
+  g_free (app->priv->author);
+  app->priv->author = g_strdup (author);
+  g_object_notify (G_OBJECT (app), "author");
+}
+
+/**
+ * ephy_web_application_get_author_url:
+ * @app: an #EphyWebApplication
+ *
+ * Obtains the URL of the author of the application.
+ *
+ * Returns: a string
+ **/
+const char *
+ephy_web_application_get_author_url (EphyWebApplication *app)
+{
+  return app->priv->author_url;
+}
+
+/**
+ * ephy_web_application_set_author_url:
+ * @app: an #EphyWebApplication
+ * @author_url: a string
+ *
+ * Sets the @author_url of @app. It's displayed in
+ * the about:applications list and also in the install
+ * dialog.
+ **/
+void
+ephy_web_application_set_author_url (EphyWebApplication *app,
+                                     const char *author_url)
+{
+  g_free (app->priv->author_url);
+  app->priv->author_url = g_strdup (author_url);
+  g_object_notify (G_OBJECT (app), "author-url");
 }
 
 /**
@@ -409,6 +489,8 @@ ephy_web_application_load (EphyWebApplication *app,
       priv->launch_path = g_key_file_get_string (key, "Application", "LaunchPath", NULL);
       priv->install_origin = g_key_file_get_string (key, "Application", "InstallOrigin", NULL);
       priv->description = g_key_file_get_string (key, "Application", "Description", NULL);
+      priv->author = g_key_file_get_string (key, "Application", "Author", NULL);
+      priv->author_url = g_key_file_get_string (key, "Application", "AuthorURL", NULL);
     }
     g_key_file_free (key);
   }
@@ -442,6 +524,8 @@ ephy_web_application_load (EphyWebApplication *app,
   g_object_notify (G_OBJECT (app), "origin");
   g_object_notify (G_OBJECT (app), "install_date");
   if (app->priv->description) g_object_notify (G_OBJECT (app), "description");
+  if (app->priv->author) g_object_notify (G_OBJECT (app), "author");
+  if (app->priv->author_url) g_object_notify (G_OBJECT (app), "author-url");
   if (app->priv->install_origin) g_object_notify (G_OBJECT (app), "install-origin");
   if (app->priv->launch_path) g_object_notify (G_OBJECT (app), "launch-path");
 
@@ -531,6 +615,10 @@ create_desktop_and_metadata_files (EphyWebApplication *app,
 
   if (priv->description)
     g_key_file_set_value (metadata_file, "Application", "Description", priv->description);
+  if (priv->author)
+    g_key_file_set_value (metadata_file, "Application", "Author", priv->description);
+  if (priv->author_url)
+    g_key_file_set_value (metadata_file, "Application", "AuthorURL", priv->author_url);
 
   uri_string = g_strconcat (priv->origin, priv->launch_path, NULL);
   exec_string = g_strdup_printf ("epiphany --application-mode --profile=\"%s\" %s",
@@ -738,6 +826,8 @@ ephy_web_application_finalize (GObject *object)
 
   g_free (priv->name);
   g_free (priv->description);
+  g_free (priv->author);
+  g_free (priv->author_url);
   g_free (priv->origin);
   g_free (priv->install_origin);
   g_free (priv->launch_path);
@@ -784,6 +874,36 @@ ephy_web_application_class_init (EphyWebApplicationClass *klass)
                                    g_param_spec_string ("description",
                                                         "App description",
                                                         "The description of the application",
+                                                        NULL,
+                                                        G_PARAM_READWRITE |
+                                                        G_PARAM_STATIC_NAME |
+                                                        G_PARAM_STATIC_NICK |
+                                                        G_PARAM_STATIC_BLURB));
+
+  /**
+   * EphyWebApplication::author:
+   *
+   * Author of the application.
+   */
+  g_object_class_install_property (object_class, PROP_AUTHOR,
+                                   g_param_spec_string ("author",
+                                                        "App author",
+                                                        "The author of the application",
+                                                        NULL,
+                                                        G_PARAM_READWRITE |
+                                                        G_PARAM_STATIC_NAME |
+                                                        G_PARAM_STATIC_NICK |
+                                                        G_PARAM_STATIC_BLURB));
+
+  /**
+   * EphyWebApplication::author-url:
+   *
+   * URL of the author of the application.
+   */
+  g_object_class_install_property (object_class, PROP_AUTHOR_URL,
+                                   g_param_spec_string ("author-url",
+                                                        "App author URL",
+                                                        "The URL of the author of the application",
                                                         NULL,
                                                         G_PARAM_READWRITE |
                                                         G_PARAM_STATIC_NAME |
@@ -891,6 +1011,8 @@ ephy_web_application_init (EphyWebApplication *app)
 
   app->priv->name = NULL;
   app->priv->description = NULL;
+  app->priv->author = NULL;
+  app->priv->author_url = NULL;
   app->priv->origin = NULL;
   app->priv->install_origin = NULL;
   app->priv->launch_path = NULL;

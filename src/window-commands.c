@@ -348,13 +348,13 @@ take_page_snapshot (EphyWebView *view)
 	return snapshot;
 }
 
-static char *
-get_default_application_image (EphyWebView *view)
+static void
+get_html_application_data (EphyWebView *view, EphyWebApplication *app, char **icon_href)
 {
        WebKitDOMDocument *document;
        WebKitDOMNodeList *links;
+       WebKitDOMNodeList *metas;
        gulong length, i;
-       char *href = NULL;
 
        document = webkit_web_view_get_dom_document (WEBKIT_WEB_VIEW (view));
        links = webkit_dom_document_get_elements_by_tag_name (document, "link");
@@ -368,13 +368,34 @@ get_default_application_image (EphyWebView *view)
                if (g_strcmp0 (rel, "apple-touch-icon") == 0 ||
                    g_strcmp0 (rel, "apple-touch-icon-precomposed") == 0)
                {
-		       href = g_strdup (webkit_dom_html_link_element_get_href (WEBKIT_DOM_HTML_LINK_ELEMENT (node)));
+                       *icon_href = g_strdup (webkit_dom_html_link_element_get_href (WEBKIT_DOM_HTML_LINK_ELEMENT (node)));
                        g_free (rel);
                        break;
                }
        }
 
-       return href;
+       metas = webkit_dom_document_get_elements_by_tag_name (document, "meta");
+       length = webkit_dom_node_list_get_length (metas);
+
+       for (i = 0; i < length; i++) {
+               char *name;
+               char *content;
+               WebKitDOMNode *node = webkit_dom_node_list_item (metas, i);
+               name = webkit_dom_html_meta_element_get_name (WEBKIT_DOM_HTML_META_ELEMENT (node));
+               content = webkit_dom_html_meta_element_get_content (WEBKIT_DOM_HTML_META_ELEMENT (node));
+               /* TODO: support more than one possible icon. */
+               if (content) {
+                       if (g_strcmp0 (name, "application-name") == 0) {
+                               ephy_web_application_set_name (app, content);
+                       } else if (g_strcmp0 (name, "description") == 0) {
+                               ephy_web_application_set_description (app, content);
+                       } else if (g_strcmp0 (name, "author") == 0) {
+                               ephy_web_application_set_author (app, content);
+                       }
+               }
+               g_free (name);
+               g_free (content);
+       }
 }
 
 void
@@ -383,7 +404,7 @@ window_cmd_file_save_as_application (GtkAction *action,
 {
 	EphyEmbed *embed;
 	EphyWebView *view;
-	char *icon_href;
+        char *icon_href = NULL;
 	GdkPixbuf *snapshot;
 	EphyWebApplication *app;
 
@@ -392,12 +413,12 @@ window_cmd_file_save_as_application (GtkAction *action,
 
         view = EPHY_WEB_VIEW (EPHY_GET_WEBKIT_WEB_VIEW_FROM_EMBED (embed));
 
-        icon_href = get_default_application_image (view);
         snapshot = take_page_snapshot (view);
 
         app = ephy_web_application_new ();
         ephy_web_application_set_name (app, ephy_web_view_get_title (view));
         ephy_web_application_set_full_uri (app, webkit_web_view_get_uri (WEBKIT_WEB_VIEW (view)));
+        get_html_application_data (view, app, &icon_href);
         ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
 					   
         ephy_web_application_show_install_dialog (GTK_WINDOW (window),

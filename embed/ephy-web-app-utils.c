@@ -652,6 +652,28 @@ ephy_web_application_install_manifest (GtkWindow *window,
       json_node_free (node);
     }
 
+    node = json_path_query ("$.developer.name", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          ephy_web_application_set_author (app, json_array_get_string_element (array, 0));
+        }
+      }
+      json_node_free (node);
+    }
+
+    node = json_path_query ("$.developer.url", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          ephy_web_application_set_author_url (app, json_array_get_string_element (array, 0));
+        }
+      }
+      json_node_free (node);
+    }
+
     node = json_path_query ("$.launch_path", root_node, NULL);
     if (node) {
       if (JSON_NODE_HOLDS_ARRAY (node)) {
