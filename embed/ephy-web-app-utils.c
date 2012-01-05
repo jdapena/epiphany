@@ -490,7 +490,7 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
                                           EphyWebApplicationInstallCallback callback,
                                           gpointer userdata)
 {
-  GtkWidget *dialog, *box, *image, *entry, *label, *content_area;
+  GtkWidget *dialog, *hbox, *vbox, *image, *entry, *description_label, *content_area;
   EphyApplicationDialogData *data;
 
   /* Show dialog with icon, title. */
@@ -507,19 +507,46 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
   gtk_container_set_border_width (GTK_CONTAINER (dialog), 5);
   gtk_box_set_spacing (GTK_BOX (content_area), 14); /* 14 + 2 * 5 = 24 */
 
-  box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
-  gtk_container_add (GTK_CONTAINER (content_area), box);
+  hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
+  gtk_container_add (GTK_CONTAINER (content_area), hbox);
 
   image = gtk_image_new ();
   gtk_widget_set_size_request (image, 128, 128);
-  gtk_container_add (GTK_CONTAINER (box), image);
+  gtk_container_add (GTK_CONTAINER (hbox), image);
+
+  vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+  gtk_container_add (GTK_CONTAINER (hbox), vbox);
 
   entry = gtk_entry_new ();
   gtk_entry_set_activates_default (GTK_ENTRY (entry), TRUE);
-  gtk_box_pack_end (GTK_BOX (box), entry, FALSE, FALSE, 0);
+  gtk_container_add (GTK_CONTAINER (vbox), entry);
 
-  label = gtk_label_new (ephy_web_application_get_description (app));
-  gtk_box_pack_end (GTK_BOX (box), label, FALSE, FALSE, 0);
+  description_label = gtk_label_new (ephy_web_application_get_description (app));
+  gtk_label_set_line_wrap (GTK_LABEL (description_label), TRUE);
+  gtk_container_add (GTK_CONTAINER (vbox), description_label);
+  
+  if (ephy_web_application_get_author_url (app) != NULL) {
+    GtkWidget *author_button;
+    GtkWidget *author_button_label;
+    if (ephy_web_application_get_author (app) != NULL) {
+      author_button = gtk_link_button_new_with_label (ephy_web_application_get_author_url (app),
+                                                      ephy_web_application_get_author (app));
+    } else {
+      author_button = gtk_link_button_new (ephy_web_application_get_author_url (app));
+    }
+    author_button_label = gtk_bin_get_child (GTK_BIN (author_button));
+    if (GTK_IS_LABEL (author_button_label)) {
+      gtk_label_set_line_wrap (GTK_LABEL (author_button_label), TRUE);
+    }
+    gtk_container_add (GTK_CONTAINER (vbox), author_button);
+  } else if (ephy_web_application_get_author (app) != NULL) {
+    GtkWidget *author_label;
+    author_label = gtk_label_new (ephy_web_application_get_author (app));
+    gtk_label_set_line_wrap (GTK_LABEL (author_label), TRUE);
+    gtk_container_add (GTK_CONTAINER (vbox), author_label);
+  }
+  gtk_label_set_line_wrap (GTK_LABEL (description_label), TRUE);
+  gtk_box_pack_end (GTK_BOX (vbox), description_label, FALSE, FALSE, 0);
   
   data = g_slice_new0 (EphyApplicationDialogData);
   data->app = g_object_ref (app);
@@ -533,7 +560,7 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
 
   gtk_widget_show_all (dialog);
   if (ephy_web_application_get_description (app) == NULL)
-    gtk_widget_hide (label);
+    gtk_widget_hide (description_label);
 
   gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_OK);
   g_signal_connect (dialog, "response",
