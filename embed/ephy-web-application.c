@@ -613,8 +613,10 @@ create_desktop_and_metadata_files (EphyWebApplication *app,
   g_key_file_set_value (desktop_file, "Desktop Entry", "Name", priv->name);
   g_key_file_set_value (metadata_file, "Application", "Name", priv->name);
 
-  if (priv->description)
+  if (priv->description) {
     g_key_file_set_value (metadata_file, "Application", "Description", priv->description);
+    g_key_file_set_value (desktop_file, "Desktop Entry", "Comment", priv->description);
+  }
   if (priv->author)
     g_key_file_set_value (metadata_file, "Application", "Author", priv->description);
   if (priv->author_url)
