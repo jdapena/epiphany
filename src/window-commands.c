@@ -384,12 +384,12 @@ get_html_application_data (EphyWebView *view, EphyWebApplication *app, char **ic
                name = webkit_dom_html_meta_element_get_name (WEBKIT_DOM_HTML_META_ELEMENT (node));
                content = webkit_dom_html_meta_element_get_content (WEBKIT_DOM_HTML_META_ELEMENT (node));
                /* TODO: support more than one possible icon. */
-               if (content) {
-                       if (g_strcmp0 (name, "application-name") == 0) {
+               if (name && content) {
+                       if (g_ascii_strcasecmp (name, "application-name") == 0) {
                                ephy_web_application_set_name (app, content);
-                       } else if (g_strcmp0 (name, "description") == 0) {
+                       } else if (g_ascii_strcasecmp (name, "description") == 0) {
                                ephy_web_application_set_description (app, content);
-                       } else if (g_strcmp0 (name, "author") == 0) {
+                       } else if (g_ascii_strcasecmp (name, "author") == 0) {
                                ephy_web_application_set_author (app, content);
                        }
                }
