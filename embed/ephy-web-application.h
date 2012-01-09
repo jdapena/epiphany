@@ -51,6 +51,16 @@ typedef enum
   EPHY_WEB_APPLICATION_INSTALLED
 } EphyWebApplicationStatus;
 
+typedef enum
+{
+  EPHY_WEB_APPLICATION_CANCELLED, /* mozilla: denied */
+  EPHY_WEB_APPLICATION_FORBIDDEN, /* mozilla: permissionDenied */
+  EPHY_WEB_APPLICATION_MANIFEST_URL_ERROR, /* mozilla: manifestURLError */
+  EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, /* mozilla: manifestParseError */
+  EPHY_WEB_APPLICATION_MANIFEST_INVALID, /* mozilla: invalidManifest */
+  EPHY_WEB_APPLICATION_NETWORK, /* mozilla: networkError */
+} EphyWebApplicationError;
+
 #define EPHY_WEB_APPLICATION_METADATA_FILE "ephy-web-app.metadata"
 #define EPHY_WEB_APPLICATION_DESKTOP_FILE "ephy-web-app.desktop"
 #define EPHY_WEB_APPLICATION_MOZILLA_MANIFEST "ephy-web-app.manifest"

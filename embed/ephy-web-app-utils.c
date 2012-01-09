@@ -470,13 +470,17 @@ dialog_application_install_response_cb (GtkDialog *dialog,
     notify_notification_show (notification, NULL);
   }
 
+  gtk_widget_destroy (GTK_WIDGET (dialog));
   if (data->callback) {
-    if (created && !data->callback (response, data->app, data->userdata))
-      ephy_web_application_delete (data->app, NULL);
+    if (created) {
+      if (!data->callback (response, data->app, data->userdata))
+        ephy_web_application_delete (data->app, NULL);
+    } else {
+      data->callback (GTK_RESPONSE_CANCEL, data->app, data->userdata);
+    }
   }
 
   ephy_application_dialog_data_free (data);
-  gtk_widget_destroy (GTK_WIDGET (dialog));
 }
 
 
@@ -572,7 +576,24 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
 typedef struct {
   char *manifest_path;
   char *receipt;
+  GError *error;
+  EphyWebApplicationInstallManifestCallback callback;
+  gpointer userdata;
 } MozAppInstallData;
+
+static void
+finish_mozapp_install_data (MozAppInstallData *install_data)
+{
+  if (install_data->callback) {
+    install_data->callback (install_data->error, install_data->userdata);
+  }
+  g_free (install_data->manifest_path);
+  g_free (install_data->receipt);
+  if  (install_data->error) {
+    g_error_free (install_data->error);
+  }
+  g_slice_free (MozAppInstallData, install_data);
+}
     
 static gboolean
 mozapp_install_cb (gint response,
@@ -612,15 +633,12 @@ mozapp_install_cb (gint response,
       g_free (receipt_path);
     }
 
+  } else {
+    g_set_error (&(mozapp_install_data->error), ERROR_QUARK,
+                 EPHY_WEB_APPLICATION_CANCELLED, "User cancelled installation");
   }
 
-  if (!result) {
-    if (err) g_error_free (err);
-  }
-
-  g_free (mozapp_install_data->manifest_path);
-  g_free (mozapp_install_data->receipt);
-  g_slice_free (MozAppInstallData, mozapp_install_data);
+  finish_mozapp_install_data (mozapp_install_data);
 
   return result;
 }
@@ -630,7 +648,9 @@ ephy_web_application_install_manifest (GtkWindow *window,
                                        const char *origin,
                                        const char *manifest_path,
                                        const char *receipt,
-                                       const char *install_origin)
+                                       const char *install_origin,
+                                       EphyWebApplicationInstallManifestCallback callback,
+                                       gpointer userdata)
 {
   JsonParser *parser;
   GError *error = NULL;
@@ -639,6 +659,11 @@ ephy_web_application_install_manifest (GtkWindow *window,
 
   manifest_file_path = g_filename_from_uri (manifest_path, NULL, &error);
   if (!manifest_file_path) {
+    if (callback) {
+      g_set_error (&error, ERROR_QUARK, EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, "Couldn't open manifest");
+      callback (error, userdata);
+      g_error_free (error);
+    }
     return;
   }
 
@@ -750,6 +775,9 @@ ephy_web_application_install_manifest (GtkWindow *window,
     mozapp_install_data = g_slice_new0 (MozAppInstallData);
     mozapp_install_data->manifest_path = g_strdup (manifest_file_path);
     mozapp_install_data->receipt = g_strdup (receipt);
+    mozapp_install_data->error = NULL;
+    mozapp_install_data->callback = callback;
+    mozapp_install_data->userdata = userdata;
 
     ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
 
@@ -764,7 +792,12 @@ ephy_web_application_install_manifest (GtkWindow *window,
     
 
   } else {
-    g_debug ("%s: %s", __FUNCTION__, error->message);
+    error->domain = ERROR_QUARK;
+    error->code = EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR;
+    if (callback) {
+      callback (error, userdata);
+      g_error_free (error);
+    }
   }
 
   g_object_unref (parser);
@@ -908,10 +941,10 @@ mozapps_am_installed (JSContextRef context,
 {
   // TODO: create exception
   if (argumentCount != 1) {
-    return NULL;
+    return JSValueMakeUndefined(context);
   }
   if (!JSValueIsObject (context, arguments[0])) {
-    return NULL;
+    return JSValueMakeUndefined(context);
   } else {
     JSObjectRef object_ref;
     JSStringRef script_ref;
@@ -926,7 +959,7 @@ mozapps_am_installed (JSContextRef context,
 
     object_ref = JSValueToObject (context, arguments[0], exception);
     if (object_ref == NULL || !JSObjectIsFunction (context, object_ref)) {
-      return NULL;
+      return JSValueMakeUndefined(context);
     }
 
     script_ref = JSStringCreateWithUTF8CString ("window.location.href");
@@ -967,7 +1000,7 @@ mozapps_am_installed (JSContextRef context,
     JSObjectCallAsFunction (context, object_ref, NULL, 1, callback_arguments, NULL);
   }
 
-  return NULL;
+  return JSValueMakeUndefined(context);
 }
 
 static JSObjectRef mozapps_app_objects_from_install_origin (JSContextRef context, const char *origin, GError **error)
@@ -1014,10 +1047,10 @@ mozapps_get_installed_by (JSContextRef context,
 {
   // TODO: create exception
   if (argumentCount != 1) {
-    return NULL;
+    return JSValueMakeUndefined(context);
   }
   if (!JSValueIsObject (context, arguments[0])) {
-    return NULL;
+    return JSValueMakeUndefined(context);
   } else {
     JSObjectRef object_ref;
     JSStringRef script_ref;
@@ -1032,7 +1065,7 @@ mozapps_get_installed_by (JSContextRef context,
 
     object_ref = JSValueToObject (context, arguments[0], exception);
     if (object_ref == NULL || !JSObjectIsFunction (context, object_ref)) {
-      return NULL;
+      return JSValueMakeUndefined(context);
     }
 
     script_ref = JSStringCreateWithUTF8CString ("window.location.href");
@@ -1073,7 +1106,7 @@ mozapps_get_installed_by (JSContextRef context,
     JSObjectCallAsFunction (context, object_ref, NULL, 1, callback_arguments, NULL);
   }
 
-  return NULL;
+  return JSValueMakeUndefined(context);
 }
 
 typedef struct {
@@ -1081,7 +1114,93 @@ typedef struct {
   char *url;
   char *local_path;
   char *receipt;
+  JSContextRef context;
+  JSValueRef onSuccessCallback;
+  JSValueRef onErrorCallback;
+  GError *error;
 } EphyMozAppInstallManifestData;
+
+static void
+finish_install_manifest (EphyMozAppInstallManifestData *manifest_data)
+{
+
+  if (manifest_data->error == NULL && manifest_data->onSuccessCallback) {
+    JSObjectCallAsFunction (manifest_data->context, 
+                            JSValueToObject (manifest_data->context, manifest_data->onSuccessCallback, NULL), 
+                            NULL, 0, NULL, NULL);
+  } else if (manifest_data->error != NULL && manifest_data->onErrorCallback) {
+    JSValueRef errorValue[1];
+    JSStringRef codeString = NULL;
+
+    errorValue[0] = JSObjectMake (manifest_data->context, NULL, NULL);
+
+    if (manifest_data->error->domain == ERROR_QUARK) {
+      switch (manifest_data->error->code) {
+      case EPHY_WEB_APPLICATION_FORBIDDEN:
+        codeString = JSStringCreateWithUTF8CString ("permissionDenied"); break;
+      case EPHY_WEB_APPLICATION_MANIFEST_URL_ERROR:
+        codeString = JSStringCreateWithUTF8CString ("manifestURLError"); break;
+      case EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR:
+        codeString = JSStringCreateWithUTF8CString ("manifestParseError"); break;
+      case EPHY_WEB_APPLICATION_MANIFEST_INVALID:
+        codeString = JSStringCreateWithUTF8CString ("invalidManifest"); break;
+      case EPHY_WEB_APPLICATION_NETWORK:
+        codeString = JSStringCreateWithUTF8CString ("networkError"); break;
+      case EPHY_WEB_APPLICATION_CANCELLED:
+      default:
+        codeString = JSStringCreateWithUTF8CString ("denied"); break;
+      }
+    } else {
+      codeString = JSStringCreateWithUTF8CString ("denied");
+    }
+
+    JSObjectSetProperty (manifest_data->context, 
+                         JSValueToObject (manifest_data->context, errorValue[0], NULL),
+                         JSStringCreateWithUTF8CString ("code"),
+                         JSValueMakeString (manifest_data->context, codeString), 
+                         kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                         NULL);
+    JSObjectSetProperty (manifest_data->context,
+                         JSValueToObject (manifest_data->context, errorValue[0], NULL),
+                         JSStringCreateWithUTF8CString ("message"),
+                         JSValueMakeString (manifest_data->context, JSStringCreateWithUTF8CString (manifest_data->error->message)), 
+                         kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                         NULL);
+
+    
+    JSObjectCallAsFunction (manifest_data->context,
+                            JSValueToObject (manifest_data->context, manifest_data->onErrorCallback, NULL),
+                            NULL, 1, errorValue, NULL);
+  }
+
+  /* if (manifest_data->onSuccessCallback) { */
+  /*   JSValueUnprotect (manifest_data->context, manifest_data->onSuccessCallback); */
+  /* } */
+  /* if (manifest_data->onErrorCallback) { */
+  /*   JSValueUnprotect (manifest_data->context, manifest_data->onErrorCallback); */
+  /* } */
+
+  /* JSGlobalContextRelease ((JSGlobalContextRef) manifest_data->context); */
+
+  g_free (manifest_data->url);
+  g_free (manifest_data->local_path);
+  g_free (manifest_data->receipt);
+  g_free (manifest_data->install_origin);
+  g_error_free (manifest_data->error);
+  g_slice_free (EphyMozAppInstallManifestData, manifest_data);
+}
+
+static void
+install_manifest_cb (GError *error, gpointer userdata)
+{
+  EphyMozAppInstallManifestData *manifest_data = (EphyMozAppInstallManifestData *) userdata;
+
+  if (manifest_data->error == NULL && error != NULL) {
+    manifest_data->error = g_error_copy (error);
+  }
+
+  finish_install_manifest (manifest_data);
+}
 
 static void
 mozapp_install_manifest_download_status_changed_cb (WebKitDownload *download,
@@ -1100,20 +1219,25 @@ mozapp_install_manifest_download_status_changed_cb (WebKitDownload *download,
                                              origin,
                                              manifest_data->local_path,
                                              manifest_data->receipt,
-                                             manifest_data->install_origin);
+                                             manifest_data->install_origin,
+                                             install_manifest_cb,
+                                             manifest_data);
       g_free (origin);
+      g_object_unref (download);
     }
+    break;
 
 	case WEBKIT_DOWNLOAD_STATUS_ERROR:
+    g_set_error (&(manifest_data->error), ERROR_QUARK,
+                 EPHY_WEB_APPLICATION_NETWORK, "Network error retrieving manifest");
+    finish_install_manifest (manifest_data);
+    g_object_unref (download);
+    break;
 	case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
-    g_free (manifest_data->url);
-    g_free (manifest_data->local_path);
-    g_free (manifest_data->receipt);
-    g_free (manifest_data->install_origin);
-    g_slice_free (EphyMozAppInstallManifestData, manifest_data);
-
+    g_set_error (&(manifest_data->error), ERROR_QUARK,
+                 EPHY_WEB_APPLICATION_CANCELLED, "Application retrieval cancelled");
+    finish_install_manifest (manifest_data);
 		g_object_unref (download);
-
 		break;
 	default:
 		break;
@@ -1139,14 +1263,14 @@ mozapps_install (JSContextRef context,
 	char *destination, *destination_uri, *tmp_filename;
 
   if (argumentCount < 1 || argumentCount > 4) {
-    return NULL;
+    return JSValueMakeUndefined(context);
   }
   if (!JSValueIsString (context, arguments[0])) {
-    return NULL;
+    return JSValueMakeUndefined(context);
   }
   url_str = JSValueToStringCopy (context, arguments[0], NULL);
   if (url_str == NULL) {
-    return NULL;
+    return JSValueMakeUndefined(context);
   }
 
   max_url_str_size = JSStringGetMaximumUTF8CStringSize (url_str);
@@ -1167,7 +1291,25 @@ mozapps_install (JSContextRef context,
 
   install_manifest_data = g_slice_new0 (EphyMozAppInstallManifestData);
   install_manifest_data->url = g_strdup (url);
+  install_manifest_data->local_path = NULL;
+  install_manifest_data->install_origin = NULL;
   install_manifest_data->receipt = g_strdup (receipt);
+  install_manifest_data->context = context;
+  install_manifest_data->onSuccessCallback = NULL;
+  install_manifest_data->onErrorCallback = NULL;
+  install_manifest_data->error = NULL;
+
+  JSGlobalContextRetain ((JSGlobalContextRef) context);
+
+  if (argumentCount > 2) {
+    install_manifest_data->onSuccessCallback = arguments[2];
+    /* JSValueProtect (context, install_manifest_data->onSuccessCallback); */
+  }
+
+  if (argumentCount > 3) {
+    install_manifest_data->onErrorCallback = arguments[3];
+    /* JSValueProtect (context, install_manifest_data->onErrorCallback); */
+  }
 
   {
     JSStringRef script_ref;
@@ -1193,6 +1335,14 @@ mozapps_install (JSContextRef context,
   }
 
   request = webkit_network_request_new (url);
+  if (request == NULL) {
+    g_set_error (&(install_manifest_data->error), ERROR_QUARK,
+                 EPHY_WEB_APPLICATION_MANIFEST_URL_ERROR, "Manifest URL is invalid");
+
+    finish_install_manifest (install_manifest_data);
+    /* URL is invalid */
+    return JSValueMakeUndefined(context);
+  }
   download = webkit_download_new (request);
   g_object_unref (request);
 
@@ -1210,7 +1360,7 @@ mozapps_install (JSContextRef context,
 
   webkit_download_start (download);
 
-  return NULL;
+  return JSValueMakeUndefined(context);
 }
 
 static const JSStaticFunction mozapps_class_staticfuncs[] =
@@ -1249,14 +1399,27 @@ NULL
 void
 ephy_web_application_setup_mozilla_api (JSGlobalContextRef context)
 {
-  JSClassRef mozAppsClassDef = JSClassCreate (&mozapps_class_def);
-  JSObjectRef mozAppsClassObj = JSObjectMake (context, mozAppsClassDef, context);
-  JSObjectRef globalObj = JSContextGetGlobalObject(context);
-  JSStringRef navigatorStr = JSStringCreateWithUTF8CString("navigator");
-  JSValueRef navigatorRef = JSObjectGetProperty (context, globalObj,
-                                                 navigatorStr, NULL);
-  JSObjectRef navigatorObj = JSValueToObject (context, navigatorRef, NULL);
-  JSStringRef mozAppsStr = JSStringCreateWithUTF8CString("mozApps");
+  static JSClassRef mozAppsClassDef = NULL;
+  JSObjectRef mozAppsClassObj;
+  JSObjectRef globalObj;
+  JSStringRef navigatorStr;
+  JSValueRef navigatorRef;
+  JSObjectRef navigatorObj;
+  JSStringRef mozAppsStr;
+
+
+  if (mozAppsClassDef == NULL) {
+    mozAppsClassDef = JSClassCreate (&mozapps_class_def);
+    JSClassRetain (mozAppsClassDef);
+  }
+  mozAppsClassObj = JSObjectMake (context, mozAppsClassDef, context);
+  globalObj = JSContextGetGlobalObject(context);
+  navigatorStr = JSStringCreateWithUTF8CString("navigator");
+  navigatorRef = JSObjectGetProperty (context, globalObj,
+                                      navigatorStr, NULL);
+  navigatorObj = JSValueToObject (context, navigatorRef, NULL);
+  mozAppsStr = JSStringCreateWithUTF8CString("mozApps");
   JSObjectSetProperty(context, navigatorObj, mozAppsStr, mozAppsClassObj,
                       kJSPropertyAttributeNone, NULL);
+  JSValueProtect (context, mozAppsClassObj);
 }
