@@ -549,8 +549,6 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
     gtk_label_set_line_wrap (GTK_LABEL (author_label), TRUE);
     gtk_container_add (GTK_CONTAINER (vbox), author_label);
   }
-  gtk_label_set_line_wrap (GTK_LABEL (description_label), TRUE);
-  gtk_box_pack_end (GTK_BOX (vbox), description_label, FALSE, FALSE, 0);
   
   data = g_slice_new0 (EphyApplicationDialogData);
   data->app = g_object_ref (app);
@@ -1111,7 +1109,6 @@ mozapps_get_installed_by (JSContextRef context,
       callback_parameter = mozapps_app_objects_from_install_origin (context, origin, exception);
     }
     
-    g_warning("%s: %s", __FUNCTION__, origin);
     g_free (origin);
 
   getInstalledByFinish:
@@ -1143,6 +1140,7 @@ finish_install_manifest (EphyMozAppInstallManifestData *manifest_data, JSValueRe
 {
   JSContextRef context;
   context = manifest_data->context;
+
   if (*exception == NULL && manifest_data->error == NULL && manifest_data->onSuccessCallback) {
     JSObjectCallAsFunction (context,
                             JSValueToObject (context, manifest_data->onSuccessCallback, NULL),
@@ -1214,7 +1212,8 @@ finish_install_manifest (EphyMozAppInstallManifestData *manifest_data, JSValueRe
   g_free (manifest_data->local_path);
   g_free (manifest_data->receipt);
   g_free (manifest_data->install_origin);
-  g_error_free (manifest_data->error);
+  if (manifest_data->error)
+    g_error_free (manifest_data->error);
   g_slice_free (EphyMozAppInstallManifestData, manifest_data);
 
   if (*exception)
