@@ -67,6 +67,7 @@ typedef enum
 #define EPHY_WEB_APPLICATION_MOZILLA_RECEIPT "ephy-web-app.receipt"
 #define EPHY_WEB_APPLICATION_APP_ICON "app-icon.png"
 #define EPHY_WEB_APPLICATION_COOKIE_JAR "cookies.sqlite"
+#define EPHY_WEB_APPLICATION_CHROME_MANIFEST "ephy-web-app.chrome-manifest.json"
 
 typedef struct _EphyWebApplication EphyWebApplication;
 typedef struct _EphyWebApplicationClass EphyWebApplicationClass;

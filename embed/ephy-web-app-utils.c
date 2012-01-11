@@ -1468,3 +1468,372 @@ ephy_web_application_setup_mozilla_api (JSGlobalContextRef context)
   JSClassRelease (mozAppsClassDef);
   JSStringRelease (mozAppsStr);
 }
+
+static gboolean
+chrome_install_cb (gint response,
+                   EphyWebApplication *app,
+                   gpointer userdata)
+{
+  gboolean result = TRUE;
+  char *manifest_path = (char *) userdata;
+
+  if (response == GTK_RESPONSE_OK) {
+    GFile *origin_manifest, *destination_manifest;
+    char *manifest_install_path;
+    GError *error = NULL;
+    
+    origin_manifest = g_file_new_for_path (manifest_path);
+    manifest_install_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_MANIFEST);
+    destination_manifest = g_file_new_for_path (manifest_install_path);
+
+    result = g_file_copy (origin_manifest, destination_manifest, 
+                          G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
+                          NULL, NULL, NULL, 
+                          &error);
+
+    if (!result && error != NULL) {
+      g_warning ("%s : %s", __FUNCTION__, error->message);
+    }
+
+    g_object_unref (origin_manifest);
+    g_object_unref (destination_manifest);
+    g_free (manifest_install_path);
+  } else {
+    result = FALSE;
+  }
+
+  g_free (manifest_path);
+
+  return result;
+}
+
+static void
+ephy_web_application_install_chrome_manifest (const char *origin,
+                                              const char *manifest_url,
+                                              const char *manifest_path)
+{
+  JsonParser *parser;
+  GError *error = NULL;
+  char *manifest_file_path;
+  SoupURI *manifest_uri;
+
+  if (!manifest_path || !manifest_url || !origin)
+    return;
+
+  manifest_file_path = g_filename_from_uri (manifest_path, NULL, &error);
+  if (!manifest_file_path) {
+    return;
+  }
+
+  manifest_uri = soup_uri_new (manifest_url);
+  if (!manifest_uri) {
+    g_free (manifest_file_path);
+    return;
+  }
+
+  parser = json_parser_new ();
+  if (json_parser_load_from_file (parser,
+                                  manifest_file_path,
+                                  NULL)) {
+    JsonNode *root_node;
+    JsonNode *node;
+    EphyWebApplication *app;
+    char *icon_href = NULL;
+
+    app = ephy_web_application_new ();
+    ephy_web_application_set_install_origin (app, origin);
+    ephy_web_application_set_origin (app, origin);
+
+    // TODO : free nodes
+    root_node = json_parser_get_root (parser);
+    node = json_path_query ("$.name", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          ephy_web_application_set_name (app, json_array_get_string_element (array, 0));
+        }
+      }
+      json_node_free (node);
+    }
+
+    node = json_path_query ("$.description", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          ephy_web_application_set_description (app, json_array_get_string_element (array, 0));
+        }
+      }
+      json_node_free (node);
+    }
+
+    node = json_path_query ("$.launch_url", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          SoupURI *launch_uri;
+
+          launch_uri = soup_uri_new_with_base (manifest_uri, json_array_get_string_element (array, 0));
+          if (launch_uri) {
+            char *launch_path;
+
+            launch_path = soup_uri_to_string (launch_uri, TRUE);
+            ephy_web_application_set_launch_path (app, launch_path);
+            soup_uri_free (launch_uri);
+          }
+        }
+      }
+      json_node_free (node);
+    }
+
+    node = json_path_query ("$.icons", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array;
+
+        array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          JsonObject *object;
+
+          object = json_array_get_object_element (array, 0);
+          if (object) {
+            GList *members, *node, *best_node;
+            unsigned long int best_size;
+
+            best_size = 0;
+            best_node = NULL;
+            members = json_object_get_members (object);
+            for (node = members; node != NULL; node = g_list_next (node)) {
+              unsigned long int node_size;
+              node_size = strtoul(node->data, NULL, 10);
+              if (node_size != ULONG_MAX && node_size >= best_size) {
+                best_size = node_size;
+                best_node = node;
+              }
+            }
+            if (best_node) {
+              SoupURI *icon_uri;
+
+              icon_uri = soup_uri_new_with_base (manifest_uri, json_object_get_string_member (object, (char *) best_node->data));
+              if (icon_uri) {
+                icon_href = soup_uri_to_string (icon_uri, FALSE);
+                soup_uri_free (icon_uri);
+              }
+            }
+            g_list_free (members);
+          }
+        }
+      }
+      json_node_free (node);
+    }
+
+    ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
+
+    ephy_web_application_show_install_dialog (NULL,
+                                              _("Install web application"), _("Install"),
+                                              app, icon_href, NULL,
+                                              chrome_install_cb, (gpointer) manifest_file_path);
+
+    g_object_unref (app);
+    g_free (icon_href);
+    
+
+  }
+  soup_uri_free (manifest_uri);
+
+  g_object_unref (parser);
+}
+
+typedef struct {
+  char *install_origin;
+  char *manifest_url;
+  char *local_path;
+} EphyChromeAppInstallManifestData;
+
+static void
+chrome_app_install_manifest_download_status_changed_cb (WebKitDownload *download,
+                                                        GParamSpec *spec,
+                                                        EphyChromeAppInstallManifestData *manifest_data)
+{
+  WebKitDownloadStatus status = webkit_download_get_status (download);
+
+  switch (status) {
+  case WEBKIT_DOWNLOAD_STATUS_FINISHED:
+    ephy_web_application_install_chrome_manifest (manifest_data->install_origin,
+                                                  manifest_data->manifest_url,
+                                                  manifest_data->local_path);
+  case WEBKIT_DOWNLOAD_STATUS_ERROR:
+  case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
+    g_free (manifest_data->local_path);
+    g_free (manifest_data->manifest_url);
+    g_free (manifest_data->install_origin);
+    g_slice_free (EphyChromeAppInstallManifestData, manifest_data);
+    break;
+  default:
+    break;
+  }
+}
+
+static JSValueRef
+chrome_app_install (JSContextRef context,
+                    JSObjectRef function,
+                    JSObjectRef thisObject,
+                    size_t argumentCount,
+                    const JSValueRef arguments[],
+                    JSValueRef *exception)
+{
+  JSStringRef fetch_href_string;
+  JSObjectRef fetch_href;
+  JSValueRef href_value;
+  JSStringRef href_string;
+  int href_length;
+  JSStringRef fetch_window_href_string;
+  JSValueRef window_href_value;
+  char *window_href = NULL;
+  char *href = NULL;
+
+  if (argumentCount != 0) {
+    *exception = JSValueMakeNumber (context, 1);
+    return JSValueMakeNull (context);
+  }
+
+  fetch_href_string = JSStringCreateWithUTF8CString
+    ("links = document.getElementsByTagName(\"link\");\n"
+     "console.log(links.length);\n"
+     "for (var i = 0; i < links.length; i++) {\n"
+     "  console.log(links[i].rel);\n"
+     "  console.log(links[i].href);\n"
+     "  if (links[i].rel == 'chrome-application-definition' && links[i].href != null) {\n"
+     "    return links[i].href;\n"
+     "    break;\n"
+     "  }\n"
+     "}\n"
+     "return null;");
+  fetch_href = JSObjectMakeFunction (context, NULL, 0, NULL, fetch_href_string, NULL, 1, exception);
+  JSStringRelease (fetch_href_string);
+  if (*exception) return JSValueMakeNull (context);
+
+  href_value = JSObjectCallAsFunction (context, fetch_href, NULL, 0, NULL, exception);
+  if (*exception) return JSValueMakeNull (context);
+
+  if (!JSValueIsString (context, href_value)) {
+    return JSValueMakeUndefined (context);
+  }
+  href_string = JSValueToStringCopy (context, href_value, exception);
+  if (*exception) return JSValueMakeNull (context);
+
+  href_length = JSStringGetMaximumUTF8CStringSize (href_string);
+  href = g_malloc0 (href_length);
+  JSStringGetUTF8CString (href_string, href, href_length);
+  JSStringRelease (href_string);
+
+  fetch_window_href_string = JSStringCreateWithUTF8CString ("window.location.href");
+  window_href_value = JSEvaluateScript (context, fetch_window_href_string, NULL, NULL, 0, exception);
+  JSStringRelease (fetch_window_href_string);
+
+  if (!JSValueIsString (context, window_href_value) || *exception) {
+    *exception = JSValueMakeNumber (context, 1);
+  }
+  if (*exception == NULL) {
+    JSStringRef window_href_string;
+    window_href_string = JSValueToStringCopy (context, window_href_value, exception);
+
+    if (*exception == NULL) {
+      int window_href_length;
+
+      window_href_length = JSStringGetMaximumUTF8CStringSize (window_href_string);
+      window_href = g_malloc0(window_href_length);
+      JSStringGetUTF8CString (window_href_string, window_href, window_href_length);
+      JSStringRelease (window_href_string);
+    }
+  }
+  g_warning ("HREF's window %s and manifest %s", window_href, href);
+
+  if (window_href && href) {
+    char *window_origin;
+    char *manifest_origin;
+
+    window_origin = get_origin (window_href);
+    manifest_origin = get_origin (href);
+
+    if (window_origin && manifest_origin && g_strcmp0 (window_origin, manifest_origin) == 0) {
+      WebKitNetworkRequest *request;
+
+      request = webkit_network_request_new (href);
+      if (request == NULL) {
+        *exception = JSValueMakeNumber (context, 1);
+      } else {
+        WebKitDownload *download;
+        char *tmp_filename;
+        char *destination;
+        char *destination_uri;
+        EphyChromeAppInstallManifestData *install_manifest_data;
+
+        download = webkit_download_new (request);
+        g_object_unref (request);
+
+        tmp_filename = ephy_file_tmp_filename ("ephy-download-XXXXXX", NULL);
+        destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
+        destination_uri = g_filename_to_uri (destination, NULL, NULL);
+        webkit_download_set_destination_uri (download, destination_uri);
+
+        install_manifest_data = g_slice_new0 (EphyChromeAppInstallManifestData);
+        install_manifest_data->manifest_url = g_strdup (href);
+        install_manifest_data->install_origin = g_strdup (manifest_origin);
+        install_manifest_data->local_path = g_strdup (destination_uri);
+        g_free (destination);
+        g_free (destination_uri);
+        g_free (tmp_filename);
+
+        g_signal_connect (G_OBJECT (download), "notify::status",
+                          G_CALLBACK (chrome_app_install_manifest_download_status_changed_cb), install_manifest_data);
+
+        webkit_download_start (download);
+      }
+    } else {
+      *exception = JSValueMakeNumber (context, 1);
+    }
+    g_free (window_origin);
+    g_free (manifest_origin);
+  }
+
+  g_free (href);
+  g_free (window_href);
+
+  if (*exception) {
+    return JSValueMakeNull (context);
+  } else {
+    return JSValueMakeUndefined (context);
+  }
+}
+
+void
+ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
+{
+  JSObjectRef global_obj;
+  JSObjectRef chrome_obj;
+  JSObjectRef app_obj;
+  JSObjectRef install_obj;
+  JSStringRef prop_name;
+  JSValueRef exception = NULL;
+
+  global_obj = JSContextGetGlobalObject(context);
+
+  chrome_obj = JSObjectMake (context, NULL, NULL);
+  prop_name = JSStringCreateWithUTF8CString ("chrome");
+  JSObjectSetProperty (context, global_obj, prop_name, chrome_obj, kJSPropertyAttributeNone, &exception);
+  JSStringRelease (prop_name);
+
+  app_obj = JSObjectMake (context, NULL, NULL);
+  prop_name = JSStringCreateWithUTF8CString ("app");
+  JSObjectSetProperty (context, chrome_obj, prop_name, app_obj, kJSPropertyAttributeNone, &exception);
+  JSStringRelease (prop_name);
+
+  prop_name = JSStringCreateWithUTF8CString ("install");
+  install_obj = JSObjectMakeFunctionWithCallback (context, prop_name, chrome_app_install);
+  JSObjectSetProperty (context, app_obj, prop_name, install_obj, kJSPropertyAttributeNone, &exception);
+  JSStringRelease (prop_name);
+  
+}

@@ -61,6 +61,7 @@ void     ephy_web_application_install_manifest (GtkWindow *window,
                                                 gpointer userdata);
 
 void     ephy_web_application_setup_mozilla_api (JSGlobalContextRef context);
+void     ephy_web_application_setup_chrome_api  (JSGlobalContextRef context);
 
 G_END_DECLS
 

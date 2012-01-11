@@ -1831,6 +1831,7 @@ window_object_cleared_cb (WebKitWebView *web_view,
 {
   JSGlobalContextRef js_context = webkit_web_frame_get_global_context (frame);
   ephy_web_application_setup_mozilla_api (js_context);
+  ephy_web_application_setup_chrome_api (js_context);
 }
 
 static gboolean
