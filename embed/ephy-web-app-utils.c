@@ -816,9 +816,8 @@ mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *a
     g_free (manifest_path);
     
     is_ok = g_file_query_exists (manifest_file, NULL);
-    if (!is_ok) {
-      *exception = JSValueMakeNumber (context, 1);
-    }
+    /* This is not a mozapp application, but shouldn't throw an error. It can be an app
+     * installed using other API's */
   }
   
   if (is_ok) is_ok = g_file_load_contents (manifest_file, NULL, &manifest_contents, NULL, NULL, NULL);
@@ -889,7 +888,7 @@ mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *a
   g_free (manifest_contents);
   if (manifest_file) g_object_unref (manifest_file);
 
-  if (*exception) {
+  if (*exception || !is_ok) {
     return JSValueMakeNull (context);
   } else {
     return result;
@@ -1038,7 +1037,7 @@ static JSValueRef mozapps_app_objects_from_install_origin (JSContextRef context,
       i++;
     }
   }
-  if (*exception) {
+  if (*exception || array_count == 0) {
     return JSValueMakeNull (context);
   } else {
     return JSObjectMakeArray (context, array_count, array_arguments, exception);
@@ -1677,6 +1676,85 @@ chrome_app_install_manifest_download_status_changed_cb (WebKitDownload *download
 }
 
 static JSValueRef
+chrome_app_get_is_installed (JSContextRef context,
+                             JSObjectRef object,
+                             JSStringRef propertyName,
+                             JSValueRef *exception)
+{
+  EphyWebApplication *app;
+  bool is_installed = FALSE;
+
+  app = ephy_web_application_new();
+  if (ephy_web_application_load (app, ephy_dot_dir (), NULL)) {
+    char *manifest_path;
+    GFile *manifest_file;
+
+    manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_MANIFEST);
+    manifest_file = g_file_new_for_path (manifest_path);
+    g_free (manifest_path);
+    
+    is_installed = g_file_query_exists (manifest_file, NULL);
+    g_object_unref (manifest_file);
+  }
+
+  return is_installed?JSValueMakeBoolean (context, TRUE):JSValueMakeUndefined (context);
+}
+
+static JSValueRef
+chrome_app_get_details (JSContextRef context,
+                        JSObjectRef function,
+                        JSObjectRef thisObject,
+                        size_t argumentCount,
+                        const JSValueRef arguments[],
+                        JSValueRef *exception)
+{
+  EphyWebApplication *app;
+  gboolean is_ok = TRUE;
+  GFile *manifest_file = NULL;
+  char *manifest_contents = NULL;
+  JSValueRef result = NULL;
+
+  if (argumentCount != 0) {
+    *exception = JSValueMakeNumber (context, 1);
+    return JSValueMakeNull (context);
+  }
+
+  app = ephy_web_application_new();
+  if (ephy_web_application_load (app, ephy_dot_dir (), NULL)) {
+    char *manifest_path;
+
+    manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_MANIFEST);
+    manifest_file = g_file_new_for_path (manifest_path);
+    g_free (manifest_path);
+    
+    is_ok = g_file_query_exists (manifest_file, NULL);
+  }
+
+  if (is_ok) {
+    is_ok = g_file_load_contents (manifest_file, NULL, &manifest_contents, NULL, NULL, NULL);
+  }
+
+  if (is_ok) {
+    JSStringRef manifest_string;
+
+    manifest_string = JSStringCreateWithUTF8CString (manifest_contents);
+    result = JSValueMakeFromJSONString (context, manifest_string);
+    JSStringRelease (manifest_string);
+  }
+
+  if (manifest_file) g_object_unref (manifest_file);
+  g_free (manifest_contents);
+
+  if (is_ok) {
+    return result?result:JSValueMakeUndefined (context);
+  } else {
+    return JSValueMakeNull (context);
+  }
+
+  return (result && is_ok)?result:JSValueMakeUndefined (context);
+}
+
+static JSValueRef
 chrome_app_install (JSContextRef context,
                     JSObjectRef function,
                     JSObjectRef thisObject,
@@ -1809,13 +1887,50 @@ chrome_app_install (JSContextRef context,
   }
 }
 
+static const JSStaticValue chrome_app_class_statisvalues[] =
+{
+  { "isInstalled", chrome_app_get_is_installed, NULL, kJSPropertyAttributeReadOnly },
+  { NULL, NULL, NULL, 0 }
+};
+
+static const JSStaticFunction chrome_app_class_staticfuncs[] =
+{
+{ "install", chrome_app_install, kJSPropertyAttributeNone },
+{ "getDetails", chrome_app_get_details, kJSPropertyAttributeNone },
+{ NULL, NULL, 0 }
+};
+
+static const JSClassDefinition chrome_app_class_def =
+{
+0,
+kJSClassAttributeNone,
+"EphyChromeAppClass",
+NULL,
+
+chrome_app_class_statisvalues,
+chrome_app_class_staticfuncs,
+
+NULL,
+NULL,
+
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL
+};
+
 void
 ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
 {
   JSObjectRef global_obj;
   JSObjectRef chrome_obj;
+  JSClassRef chrome_app_class;
   JSObjectRef app_obj;
-  JSObjectRef install_obj;
   JSStringRef prop_name;
   JSValueRef exception = NULL;
 
@@ -1826,14 +1941,10 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   JSObjectSetProperty (context, global_obj, prop_name, chrome_obj, kJSPropertyAttributeNone, &exception);
   JSStringRelease (prop_name);
 
-  app_obj = JSObjectMake (context, NULL, NULL);
+  chrome_app_class = JSClassCreate (&chrome_app_class_def);
+  app_obj = JSObjectMake (context, chrome_app_class, NULL);
   prop_name = JSStringCreateWithUTF8CString ("app");
   JSObjectSetProperty (context, chrome_obj, prop_name, app_obj, kJSPropertyAttributeNone, &exception);
   JSStringRelease (prop_name);
 
-  prop_name = JSStringCreateWithUTF8CString ("install");
-  install_obj = JSObjectMakeFunctionWithCallback (context, prop_name, chrome_app_install);
-  JSObjectSetProperty (context, app_obj, prop_name, install_obj, kJSPropertyAttributeNone, &exception);
-  JSStringRelease (prop_name);
-  
 }
