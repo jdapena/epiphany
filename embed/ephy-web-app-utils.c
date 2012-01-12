@@ -1925,6 +1925,94 @@ NULL
 };
 
 static JSValueRef
+chrome_webstore_private_install (JSContextRef context,
+                                 JSObjectRef function,
+                                 JSObjectRef thisObject,
+                                 size_t argumentCount,
+                                 const JSValueRef arguments[],
+                                 JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
+chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
+                                                     JSObjectRef function,
+                                                     JSObjectRef thisObject,
+                                                     size_t argumentCount,
+                                                     const JSValueRef arguments[],
+                                                     JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
+chrome_webstore_private_complete_install (JSContextRef context,
+                                          JSObjectRef function,
+                                          JSObjectRef thisObject,
+                                          size_t argumentCount,
+                                          const JSValueRef arguments[],
+                                          JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
+chrome_webstore_private_silently_install (JSContextRef context,
+                                          JSObjectRef function,
+                                          JSObjectRef thisObject,
+                                          size_t argumentCount,
+                                          const JSValueRef arguments[],
+                                          JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
+chrome_webstore_private_get_browser_login (JSContextRef context,
+                                          JSObjectRef function,
+                                          JSObjectRef thisObject,
+                                          size_t argumentCount,
+                                          const JSValueRef arguments[],
+                                          JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
+chrome_webstore_private_get_store_login (JSContextRef context,
+                                         JSObjectRef function,
+                                         JSObjectRef thisObject,
+                                         size_t argumentCount,
+                                         const JSValueRef arguments[],
+                                         JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
+chrome_webstore_private_set_store_login (JSContextRef context,
+                                         JSObjectRef function,
+                                         JSObjectRef thisObject,
+                                         size_t argumentCount,
+                                         const JSValueRef arguments[],
+                                         JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
+chrome_webstore_private_prompt_browser_login (JSContextRef context,
+                                              JSObjectRef function,
+                                              JSObjectRef thisObject,
+                                              size_t argumentCount,
+                                              const JSValueRef arguments[],
+                                              JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
 chrome_webstore_private_get_webgl_status (JSContextRef context,
                                           JSObjectRef function,
                                           JSObjectRef thisObject,
@@ -1977,6 +2065,14 @@ chrome_webstore_private_get_webgl_status (JSContextRef context,
 static const JSStaticFunction chrome_webstore_private_class_staticfuncs[] =
 {
 { "getWebGLStatus", chrome_webstore_private_get_webgl_status, kJSPropertyAttributeNone },
+{ "install", chrome_webstore_private_install, kJSPropertyAttributeNone },
+{ "beginInstallWithManifest3", chrome_webstore_private_begin_install_with_manifest, kJSPropertyAttributeNone },
+{ "completeInstall", chrome_webstore_private_complete_install, kJSPropertyAttributeNone },
+{ "silentlyInstall", chrome_webstore_private_silently_install, kJSPropertyAttributeNone },
+{ "getBrowserLogin", chrome_webstore_private_get_browser_login, kJSPropertyAttributeNone },
+{ "getStoreLogin", chrome_webstore_private_get_store_login, kJSPropertyAttributeNone },
+{ "setStoreLogin", chrome_webstore_private_set_store_login, kJSPropertyAttributeNone },
+{ "promptBrowserLogin", chrome_webstore_private_prompt_browser_login, kJSPropertyAttributeNone },
 { NULL, NULL, 0 }
 };
 
@@ -1989,6 +2085,83 @@ NULL,
 
 NULL,
 chrome_webstore_private_class_staticfuncs,
+
+NULL,
+NULL,
+
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL
+};
+
+static JSValueRef
+chrome_management_on_installed (JSContextRef context,
+                                JSObjectRef function,
+                                JSObjectRef thisObject,
+                                size_t argumentCount,
+                                const JSValueRef arguments[],
+                                JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
+chrome_management_get_all (JSContextRef context,
+                           JSObjectRef function,
+                           JSObjectRef thisObject,
+                           size_t argumentCount,
+                           const JSValueRef arguments[],
+                           JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
+chrome_management_uninstall (JSContextRef context,
+                             JSObjectRef function,
+                             JSObjectRef thisObject,
+                             size_t argumentCount,
+                             const JSValueRef arguments[],
+                             JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static JSValueRef
+chrome_management_launch_app (JSContextRef context,
+                              JSObjectRef function,
+                              JSObjectRef thisObject,
+                              size_t argumentCount,
+                              const JSValueRef arguments[],
+                              JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+static const JSStaticFunction chrome_management_class_staticfuncs[] =
+{
+{ "onInstalled", chrome_management_on_installed, kJSPropertyAttributeNone },
+{ "getAll", chrome_management_get_all, kJSPropertyAttributeNone },
+{ "uninstall", chrome_management_uninstall, kJSPropertyAttributeNone },
+{ "launchApp", chrome_management_launch_app, kJSPropertyAttributeNone },
+{ NULL, NULL, 0 }
+};
+
+static const JSClassDefinition chrome_management_class_def =
+{
+0,
+kJSClassAttributeNone,
+"EphyChromeManagementClass",
+NULL,
+
+NULL,
+chrome_management_class_staticfuncs,
 
 NULL,
 NULL,
@@ -2019,6 +2192,9 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   JSClassRef chrome_webstore_private_class;
   JSObjectRef chrome_webstore_private_obj;
 
+  JSClassRef chrome_management_class;
+  JSObjectRef chrome_management_obj;
+
   global_obj = JSContextGetGlobalObject(context);
 
   chrome_obj = JSObjectMake (context, NULL, NULL);
@@ -2036,6 +2212,12 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   chrome_webstore_private_obj = JSObjectMake (context, chrome_webstore_private_class, NULL);
   prop_name = JSStringCreateWithUTF8CString ("webstorePrivate");
   JSObjectSetProperty (context, chrome_obj, prop_name, chrome_webstore_private_obj, kJSPropertyAttributeNone, &exception);
+  JSStringRelease (prop_name);
+
+  chrome_management_class = JSClassCreate (&chrome_management_class_def);
+  chrome_management_obj = JSObjectMake (context, chrome_management_class, NULL);
+  prop_name = JSStringCreateWithUTF8CString ("management");
+  JSObjectSetProperty (context, chrome_obj, prop_name, chrome_management_obj, kJSPropertyAttributeNone, &exception);
   JSStringRelease (prop_name);
 
 }
