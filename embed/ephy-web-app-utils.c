@@ -38,6 +38,20 @@
 #define ERROR_QUARK (g_quark_from_static_string ("ephy-web-application-error"))
 
 static char *
+js_string_to_utf8 (JSStringRef js_string)
+{
+  int length;
+  char *result;
+
+  length = JSStringGetMaximumUTF8CStringSize (js_string);
+  if (length == 0)
+    return NULL;
+  result = g_malloc0 (length);
+  JSStringGetUTF8CString (js_string, result, length);
+  return result;
+}
+
+static char *
 get_origin (const char *url)
 {
   char *origin;
@@ -1943,7 +1957,191 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
                                                      const JSValueRef arguments[],
                                                      JSValueRef *exception)
 {
-  return JSValueMakeNull (context);
+  JSObjectRef details_obj;
+  JSStringRef prop_name;
+  JSValueRef prop_value;
+  char *id = NULL;
+  char *name = NULL;
+  char *description = NULL;
+  char *manifest = NULL;
+  char *icon_url = NULL;
+  char *icon_data = NULL;
+  char *localized_name = NULL;
+  char *web_url = NULL;
+  JSObjectRef manifest_obj = NULL;
+
+  if (argumentCount > 2 || 
+      !JSValueIsObject (context, arguments[0])) {
+    *exception = JSValueMakeNumber (context, 1);
+    return JSValueMakeNull (context);
+  }
+
+  details_obj = JSValueToObject (context, arguments[0], exception);
+  if (*exception) return JSValueMakeNull (context);
+
+  prop_name = JSStringCreateWithUTF8CString ("id");
+  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef id_string;
+    id_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+    id = js_string_to_utf8 (id_string);
+  }
+  g_warning ("%s : retrieved id: %s", __FUNCTION__, id?id:"(null)");
+
+  prop_name = JSStringCreateWithUTF8CString ("manifest");
+  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef manifest_string;
+    JSValueRef manifest_value;
+    manifest_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+    manifest_value = JSValueMakeFromJSONString (context, manifest_string);
+    if (JSValueIsObject (context, manifest_value)) {
+      manifest_obj = JSValueToObject (context, manifest_value, exception);
+    }
+    manifest = js_string_to_utf8 (manifest_string);
+  }
+  g_warning ("%s : retrieved manifest: %s", __FUNCTION__, manifest?manifest:"(null)");
+
+  prop_name = JSStringCreateWithUTF8CString ("iconUrl");
+  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef icon_url_string;
+    icon_url_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+    icon_url = js_string_to_utf8 (icon_url_string);
+  }
+  g_warning ("%s : retrieved iconUrl: %s", __FUNCTION__, icon_url?icon_url:"(null)");
+
+  prop_name = JSStringCreateWithUTF8CString ("iconData");
+  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef icon_data_string;
+    icon_data_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+    icon_data = js_string_to_utf8 (icon_data_string);
+  }
+  g_warning ("%s : retrieved iconData: %s", __FUNCTION__, icon_data?icon_data:"(null)");
+
+  prop_name = JSStringCreateWithUTF8CString ("localizedName");
+  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef localized_name_string;
+    localized_name_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+    localized_name = js_string_to_utf8 (localized_name_string);
+  }
+  g_warning ("%s : retrieved localizedName: %s", __FUNCTION__, localized_name?localized_name:"(null)");
+
+  prop_name = JSStringCreateWithUTF8CString ("name");
+  prop_value = JSObjectGetProperty (context, manifest_obj, prop_name, exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef name_string;
+    name_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+    name = js_string_to_utf8 (name_string);
+  }
+  g_warning ("%s : retrieved name: %s", __FUNCTION__, name?name:"(null)");
+
+  prop_name = JSStringCreateWithUTF8CString ("description");
+  prop_value = JSObjectGetProperty (context, manifest_obj, prop_name, exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef description_string;
+    description_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+    description = js_string_to_utf8 (description_string);
+  }
+  g_warning ("%s : retrieved description: %s", __FUNCTION__, description?description:"(null)");
+
+  prop_name = JSStringCreateWithUTF8CString ("app");
+  prop_value = JSObjectGetProperty (context, manifest_obj, prop_name, exception);
+  if (*exception) goto finish;
+  if (JSValueIsObject (context, prop_value)) {
+    JSObjectRef app_obj;
+
+    app_obj = JSValueToObject (context, prop_value, exception);
+    if (*exception) goto finish;
+
+    prop_name = JSStringCreateWithUTF8CString ("launch");
+    prop_value = JSObjectGetProperty (context, app_obj, prop_name, exception);
+
+    if (*exception) goto finish;
+
+    if (JSValueIsObject (context, prop_value)) {
+      JSObjectRef launch_obj;
+
+      launch_obj = JSValueToObject (context, prop_value, exception);
+      if (*exception) goto finish;
+
+      prop_name = JSStringCreateWithUTF8CString ("web_url");
+      prop_value = JSObjectGetProperty (context, launch_obj, prop_name, exception);
+
+      if (JSValueIsString (context, prop_value)) {
+        JSStringRef web_url_string;
+        web_url_string = JSValueToStringCopy (context, prop_value, exception);
+        if (*exception) goto finish;
+        web_url = js_string_to_utf8 (web_url_string);
+      }
+
+    }
+    
+  }
+  g_warning ("%s : retrieved web url: %s", __FUNCTION__, web_url?web_url:"(null)");
+
+  if (name && manifest_obj && web_url) {
+    EphyWebApplication *app;
+
+    app = ephy_web_application_new ();
+
+    ephy_web_application_set_name (app, localized_name?localized_name:name);
+    if (description) ephy_web_application_set_description (app, description);
+    ephy_web_application_set_full_uri (app, web_url);
+
+    ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
+
+    ephy_web_application_show_install_dialog (NULL,
+                                              _("Install Chrome web store application"), _("Install"),
+                                              app, icon_url, NULL,
+                                              NULL, NULL);
+    g_object_unref (app);
+
+  } else if (argumentCount == 2) {
+    JSObjectRef callback_function;
+    JSStringRef result_string;
+    JSValueRef parameters[1];
+
+    callback_function = JSValueToObject (context, arguments[1], exception);
+    if (*exception) goto finish;
+
+    result_string = JSStringCreateWithUTF8CString ("manifest_error");
+    parameters[0] = JSValueMakeString (context, result_string);
+    JSStringRelease (result_string);
+
+    if (JSObjectIsFunction (context, callback_function)) {
+      JSObjectCallAsFunction (context, callback_function, NULL, 1, parameters, exception);
+    }
+  }
+
+ finish:
+
+  g_free (id);
+  g_free (name);
+  g_free (description);
+  g_free (manifest);
+  g_free (icon_url);
+  g_free (icon_data);
+  g_free (localized_name);
+  g_free (web_url);
+  if (*exception) return JSValueMakeNull (context);
+  return JSValueMakeUndefined (context);
 }
 
 static JSValueRef
@@ -1954,7 +2152,28 @@ chrome_webstore_private_complete_install (JSContextRef context,
                                           const JSValueRef arguments[],
                                           JSValueRef *exception)
 {
-  return JSValueMakeNull (context);
+  if (argumentCount > 2) {
+    *exception = JSValueMakeNumber (context, 1);
+    goto finish;
+  }
+
+  if (argumentCount == 2) {
+    JSObjectRef callback_function;
+    callback_function = JSValueToObject (context, arguments[1], exception);
+    if (*exception) goto finish;
+
+    if (JSObjectIsFunction (context, callback_function)) {
+      JSObjectCallAsFunction (context, callback_function, NULL, 0, NULL, exception);
+    }
+    
+  }
+
+ finish:
+  if (*exception) {
+    return JSValueMakeNull (context);
+  } else {
+    return JSValueMakeUndefined (context);
+  }
 }
 
 static JSValueRef
