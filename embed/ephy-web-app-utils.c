@@ -1924,15 +1924,100 @@ NULL,
 NULL
 };
 
+static JSValueRef
+chrome_webstore_private_get_webgl_status (JSContextRef context,
+                                          JSObjectRef function,
+                                          JSObjectRef thisObject,
+                                          size_t argumentCount,
+                                          const JSValueRef arguments[],
+                                          JSValueRef *exception)
+{
+  JSObjectRef callback_function;
+  JSStringRef detect_script_string;
+  JSObjectRef detect_script;
+  JSValueRef script_result_value;
+  gboolean result = FALSE;
+
+  if (argumentCount != 1 || !JSValueIsObject(context, arguments[0])) {
+    *exception = JSValueMakeNumber (context, 1);
+    return JSValueMakeNull (context);
+  }
+
+  callback_function = JSValueToObject (context, arguments[0], exception);
+  if (!*exception && !JSObjectIsFunction (context, callback_function)) {
+    *exception = JSValueMakeNumber (context, 1);
+  }
+  if (*exception) return JSValueMakeNull (context);
+
+  detect_script_string = JSStringCreateWithUTF8CString
+    ("var canvas = document.createElement('canvas');"
+     "return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));");
+  detect_script = JSObjectMakeFunction (context, NULL, 0, NULL, detect_script_string, NULL, 1, exception);
+  JSStringRelease (detect_script_string);
+  if (*exception) return JSValueMakeNull (context);
+
+  script_result_value = JSObjectCallAsFunction (context, detect_script, NULL, 0, NULL, NULL);
+  if (JSValueIsBoolean (context, script_result_value)) {
+    result = JSValueToBoolean (context, script_result_value);
+  }
+
+  {
+    JSStringRef result_string;
+    JSValueRef cb_arguments[1];
+
+    result_string = JSStringCreateWithUTF8CString (result?"webgl_allowed":"webgl_blocked");
+    cb_arguments[0] = JSValueMakeString (context, result_string);
+    JSStringRelease (result_string);
+
+    return JSObjectCallAsFunction (context, callback_function, NULL, 1, cb_arguments, exception);
+  }
+
+}
+
+static const JSStaticFunction chrome_webstore_private_class_staticfuncs[] =
+{
+{ "getWebGLStatus", chrome_webstore_private_get_webgl_status, kJSPropertyAttributeNone },
+{ NULL, NULL, 0 }
+};
+
+static const JSClassDefinition chrome_webstore_private_class_def =
+{
+0,
+kJSClassAttributeNone,
+"EphyChromeWebstorePrivateClass",
+NULL,
+
+NULL,
+chrome_webstore_private_class_staticfuncs,
+
+NULL,
+NULL,
+
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL
+};
+
 void
 ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
 {
   JSObjectRef global_obj;
-  JSObjectRef chrome_obj;
-  JSClassRef chrome_app_class;
-  JSObjectRef app_obj;
   JSStringRef prop_name;
   JSValueRef exception = NULL;
+
+  JSObjectRef chrome_obj;
+
+  JSClassRef chrome_app_class;
+  JSObjectRef chrome_app_obj;
+
+  JSClassRef chrome_webstore_private_class;
+  JSObjectRef chrome_webstore_private_obj;
 
   global_obj = JSContextGetGlobalObject(context);
 
@@ -1942,9 +2027,15 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   JSStringRelease (prop_name);
 
   chrome_app_class = JSClassCreate (&chrome_app_class_def);
-  app_obj = JSObjectMake (context, chrome_app_class, NULL);
+  chrome_app_obj = JSObjectMake (context, chrome_app_class, NULL);
   prop_name = JSStringCreateWithUTF8CString ("app");
-  JSObjectSetProperty (context, chrome_obj, prop_name, app_obj, kJSPropertyAttributeNone, &exception);
+  JSObjectSetProperty (context, chrome_obj, prop_name, chrome_app_obj, kJSPropertyAttributeNone, &exception);
+  JSStringRelease (prop_name);
+
+  chrome_webstore_private_class = JSClassCreate (&chrome_webstore_private_class_def);
+  chrome_webstore_private_obj = JSObjectMake (context, chrome_webstore_private_class, NULL);
+  prop_name = JSStringCreateWithUTF8CString ("webstorePrivate");
+  JSObjectSetProperty (context, chrome_obj, prop_name, chrome_webstore_private_obj, kJSPropertyAttributeNone, &exception);
   JSStringRelease (prop_name);
 
 }
