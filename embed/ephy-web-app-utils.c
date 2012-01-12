@@ -2101,17 +2101,6 @@ NULL
 };
 
 static JSValueRef
-chrome_management_on_installed (JSContextRef context,
-                                JSObjectRef function,
-                                JSObjectRef thisObject,
-                                size_t argumentCount,
-                                const JSValueRef arguments[],
-                                JSValueRef *exception)
-{
-  return JSValueMakeNull (context);
-}
-
-static JSValueRef
 chrome_management_get_all (JSContextRef context,
                            JSObjectRef function,
                            JSObjectRef thisObject,
@@ -2119,7 +2108,31 @@ chrome_management_get_all (JSContextRef context,
                            const JSValueRef arguments[],
                            JSValueRef *exception)
 {
-  return JSValueMakeNull (context);
+  JSObjectRef callback_function = NULL;
+
+  if (argumentCount > 1 || (argumentCount == 1 && !JSValueIsObject(context, arguments[0]))) {
+    *exception = JSValueMakeNumber (context, 1);
+    return JSValueMakeNull (context);
+  }
+
+  if (argumentCount == 1) {
+    callback_function = JSValueToObject (context, arguments[0], exception);
+    if (!*exception && !JSObjectIsFunction (context, callback_function)) {
+      *exception = JSValueMakeNumber (context, 1);
+    }
+  }
+  if (*exception) return JSValueMakeNull (context);
+
+  {
+    JSValueRef cb_arguments[1];
+
+    cb_arguments[0] = JSObjectMakeArray (context, 0, NULL, exception);
+
+    if (callback_function) {
+      JSObjectCallAsFunction (context, callback_function, NULL, 1, cb_arguments, exception);
+    }
+    return cb_arguments[0];
+  }
 }
 
 static JSValueRef
@@ -2146,7 +2159,6 @@ chrome_management_launch_app (JSContextRef context,
 
 static const JSStaticFunction chrome_management_class_staticfuncs[] =
 {
-{ "onInstalled", chrome_management_on_installed, kJSPropertyAttributeNone },
 { "getAll", chrome_management_get_all, kJSPropertyAttributeNone },
 { "uninstall", chrome_management_uninstall, kJSPropertyAttributeNone },
 { "launchApp", chrome_management_launch_app, kJSPropertyAttributeNone },
@@ -2195,6 +2207,13 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   JSClassRef chrome_management_class;
   JSObjectRef chrome_management_obj;
 
+  JSStringRef on_installed_string;
+  JSObjectRef on_installed_function;
+  JSValueRef on_installed_value;
+  JSStringRef on_uninstalled_string;
+  JSObjectRef on_uninstalled_function;
+  JSValueRef on_uninstalled_value;
+
   global_obj = JSContextGetGlobalObject(context);
 
   chrome_obj = JSObjectMake (context, NULL, NULL);
@@ -2218,6 +2237,52 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   chrome_management_obj = JSObjectMake (context, chrome_management_class, NULL);
   prop_name = JSStringCreateWithUTF8CString ("management");
   JSObjectSetProperty (context, chrome_obj, prop_name, chrome_management_obj, kJSPropertyAttributeNone, &exception);
+  JSStringRelease (prop_name);
+
+  on_installed_string = JSStringCreateWithUTF8CString
+    ("return {\n"
+     "  _listeners: new Array (),\n"
+     "  addListener: function (listener) {\n"
+     "    this._listeners.push (listener);\n"
+     "  },\n"
+     "  removeListener: function (listener) {\n"
+     "    var idx = this._listeners.indexOf(listener);\n"
+     "    if (idx != -1) this._listeners.splice(idx, 1);\n"
+     "  },\n"
+     "  installEvent: function (info) {\n"
+     "    for (var i = 0; i < this._listeners.length; i++) {\n"
+     "      this._listeners[i](info);\n"
+     "    }\n"
+     "  }\n"
+     "}\n");
+  on_installed_function = JSObjectMakeFunction (context, NULL, 0, NULL, on_installed_string, NULL, 1, &exception);
+  JSStringRelease (on_installed_string);
+  on_installed_value = JSObjectCallAsFunction (context, on_installed_function, NULL, 0, NULL, &exception);
+  prop_name = JSStringCreateWithUTF8CString ("onInstalled");
+  JSObjectSetProperty (context, chrome_management_obj, prop_name, on_installed_value, kJSPropertyAttributeNone, &exception);
+  JSStringRelease (prop_name);
+
+  on_uninstalled_string = JSStringCreateWithUTF8CString
+    ("return {\n"
+     "  _listeners: new Array (),\n"
+     "  addListener: function (listener) {\n"
+     "    this._listeners.push (listener);\n"
+     "  },\n"
+     "  removeListener: function (listener) {\n"
+     "    var idx = this._listeners.indexOf(listener);\n"
+     "    if (idx != -1) this._listeners.splice(idx, 1);\n"
+     "  },\n"
+     "  installEvent: function (id) {\n"
+     "    for (var i = 0; i < this._listeners.length; i++) {\n"
+     "      this._listeners[i](id);\n"
+     "    }\n"
+     "  }\n"
+     "}\n");
+  on_uninstalled_function = JSObjectMakeFunction (context, NULL, 0, NULL, on_uninstalled_string, NULL, 1, &exception);
+  JSStringRelease (on_uninstalled_string);
+  on_uninstalled_value = JSObjectCallAsFunction (context, on_uninstalled_function, NULL, 0, NULL, &exception);
+  prop_name = JSStringCreateWithUTF8CString ("onUninstalled");
+  JSObjectSetProperty (context, chrome_management_obj, prop_name, on_uninstalled_value, kJSPropertyAttributeNone, &exception);
   JSStringRelease (prop_name);
 
 }
