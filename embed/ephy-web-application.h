@@ -69,6 +69,7 @@ typedef enum
 #define EPHY_WEB_APPLICATION_COOKIE_JAR "cookies.sqlite"
 #define EPHY_WEB_APPLICATION_CHROME_MANIFEST "ephy-web-app.chrome-manifest.json"
 #define EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST "ephy-web-app.chrome-webstore-manifest.json"
+#define EPHY_WEB_APPLICATION_CHROME_CRX "ephy-web-app.chrome-webstore-extension.crx"
 
 typedef struct _EphyWebApplication EphyWebApplication;
 typedef struct _EphyWebApplicationClass EphyWebApplicationClass;

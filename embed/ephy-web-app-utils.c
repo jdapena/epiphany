@@ -32,10 +32,16 @@
 #include <json-glib/json-glib.h>
 #include <libnotify/notify.h>
 #include <libsoup/soup-gnome.h>
-#include <webkit/webkit.h>
+#include <libxml/parser.h>
+#include <libxml/xpath.h>
+#include <libxml/xpathInternals.h>
+#include <libxml/tree.h>
 #include <stdlib.h>
+#include <webkit/webkit.h>
 
 #define ERROR_QUARK (g_quark_from_static_string ("ephy-web-application-error"))
+
+#define DEFAULT_CHROME_WEBSTORE_CRX_UPDATE_PATH "http://clients2.google.com/service/update2/crx"
 
 static char *
 js_string_to_utf8 (JSStringRef js_string)
@@ -1962,7 +1968,13 @@ chrome_webstore_private_install (JSContextRef context,
 }
 
 typedef struct {
+  EphyWebApplication *app;
+  char *id;
   char *manifest_data;
+  char *update_url;
+  char *icon_url;
+  GdkPixbuf *icon_pixbuf;
+  char *crx_file_path;
   GError *error;
   JSGlobalContextRef context;
   JSObjectRef this_object;
@@ -2007,7 +2019,14 @@ finish_chrome_webstore_install_data (ChromeWebstoreInstallData *install_data)
     JSValueUnprotect (install_data->context, install_data->this_object);
   JSGlobalContextRelease (install_data->context);
 
+  g_object_unref (install_data->app);
+  g_free (install_data->crx_file_path);
   g_free (install_data->manifest_data);
+  g_free (install_data->update_url);
+  g_free (install_data->icon_url);
+  g_free (install_data->id);
+  if (install_data->icon_pixbuf)
+    g_object_unref (install_data->icon_pixbuf);
   if (install_data->error) {
     g_error_free (install_data->error);
   }
@@ -2034,6 +2053,24 @@ chrome_webstore_install_cb (gint response,
                                     &(install_data->error));
 
       g_free (manifest_install_path);
+
+      if (install_data->crx_file_path) {
+        char *crx_path;
+        GFile *origin_crx, *destination_crx;
+
+        origin_crx = g_file_new_for_path (install_data->crx_file_path);
+        crx_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX);
+        destination_crx = g_file_new_for_path (crx_path);
+
+        g_file_copy (origin_crx, destination_crx, 
+                     G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
+                     NULL, NULL, NULL, 
+                     NULL);
+
+        g_object_unref (origin_crx);
+        g_object_unref (destination_crx);
+        g_free (crx_path);
+      }
     }
 
   } else {
@@ -2042,6 +2079,171 @@ chrome_webstore_install_cb (gint response,
   }
 
   finish_chrome_webstore_install_data (install_data);
+
+  return result;
+}
+
+static void
+crx_download_status_changed_cb (WebKitDownload *download,
+                                GParamSpec *spec,
+                                ChromeWebstoreInstallData *install_data)
+{
+  WebKitDownloadStatus status = webkit_download_get_status (download);
+
+  switch (status) {
+  case WEBKIT_DOWNLOAD_STATUS_FINISHED:
+    {
+      install_data->crx_file_path = g_filename_from_uri (webkit_download_get_destination_uri (download), NULL, NULL);
+    }
+  case WEBKIT_DOWNLOAD_STATUS_ERROR:
+  case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
+    ephy_web_application_show_install_dialog
+      (NULL,
+       _("Install Chrome web store application"), _("Install"),
+       install_data->app, install_data->icon_url, install_data->icon_pixbuf,
+       chrome_webstore_install_cb, install_data);
+    break;
+  default:
+    break;
+  }
+}
+static gboolean
+chrome_retrieve_crx (char *crx_url, 
+                     ChromeWebstoreInstallData *install_data)
+{
+  WebKitNetworkRequest *request;
+  WebKitDownload *download;
+  char *tmp_filename;
+  char *destination;
+  char *destination_uri;
+
+  request = webkit_network_request_new (crx_url);
+  if (request == NULL) {
+    return FALSE;
+  }
+
+  download = webkit_download_new (request);
+  g_object_unref (request);
+
+  tmp_filename = ephy_file_tmp_filename ("ephy-download-XXXXXX", NULL);
+  destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
+  destination_uri = g_filename_to_uri (destination, NULL, NULL);
+  webkit_download_set_destination_uri (download, destination_uri);
+
+  g_signal_connect (G_OBJECT (download), "notify::status",
+                    G_CALLBACK (crx_download_status_changed_cb), install_data);
+  webkit_download_start (download);
+
+  return TRUE;
+}
+
+static void
+crx_update_xml_download_status_changed_cb (WebKitDownload *download,
+                                           GParamSpec *spec,
+                                           ChromeWebstoreInstallData *install_data)
+{
+  WebKitDownloadStatus status = webkit_download_get_status (download);
+
+  switch (status) {
+  case WEBKIT_DOWNLOAD_STATUS_FINISHED:
+    {
+      xmlDocPtr document;
+
+      document = xmlParseFile (webkit_download_get_destination_uri (download));
+      if (document) {
+        xmlXPathContextPtr context;
+        context = xmlXPathNewContext (document);
+        if (context) {
+          char *xpath;
+          xmlXPathObjectPtr result;
+          xmlXPathRegisterNs (context, (xmlChar *) "ur",
+                              (xmlChar *) "http://www.google.com/update2/response");
+          
+          xpath = g_strdup_printf ("/ur:gupdate/ur:app[@appid='%s']/ur:updatecheck/@codebase", install_data->id);
+          result = xmlXPathEvalExpression ((xmlChar *) xpath, context);
+          if (result != NULL && xmlXPathNodeSetGetLength (result->nodesetval) == 1) {
+            xmlAttrPtr idNode;
+            idNode = (xmlAttrPtr) xmlXPathNodeSetItem (result->nodesetval, 0);
+            if (idNode->children && idNode->children->type == XML_TEXT_NODE) {
+              char *crx_url;
+
+              crx_url = (char *) idNode->children->content;
+              g_warning ("%s : retrieved crx url : %s", __FUNCTION__, crx_url);
+              if (chrome_retrieve_crx (crx_url, install_data)) {
+                break;
+              }
+            }
+          }
+          g_free (xpath);
+          xmlXPathFreeContext (context);
+        }
+        xmlFreeDoc (document);
+      }
+    }
+    // TODO: parse update xml and retrieve and install crx
+  case WEBKIT_DOWNLOAD_STATUS_ERROR:
+  case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
+    ephy_web_application_show_install_dialog
+      (NULL,
+       _("Install Chrome web store application"), _("Install"),
+       install_data->app, install_data->icon_url, install_data->icon_pixbuf,
+       chrome_webstore_install_cb, install_data);
+    break;
+  default:
+    break;
+  }
+}
+
+static gboolean
+chrome_retrieve_crx_update_xml (EphyWebApplication *app, 
+                                ChromeWebstoreInstallData *install_data)
+{
+  char *full_uri;
+  gboolean result = FALSE;
+
+  {
+    SoupURI *xml_uri;
+    char *extension_value;
+
+    xml_uri = soup_uri_new (install_data->update_url);
+    extension_value = g_strdup_printf ("id=%s&uc", install_data->id);
+
+    soup_uri_set_query_from_fields (xml_uri, "x", extension_value, NULL);
+    g_free (extension_value);
+
+    full_uri = soup_uri_to_string (xml_uri, FALSE);
+    soup_uri_free (xml_uri);
+  }
+
+  {
+    WebKitNetworkRequest *request;
+    WebKitDownload *download;
+    char *tmp_filename;
+    char *destination;
+    char *destination_uri;
+
+    request = webkit_network_request_new (full_uri);
+    if (request == NULL) {
+      goto finish;
+    }
+
+    download = webkit_download_new (request);
+    g_object_unref (request);
+
+    tmp_filename = ephy_file_tmp_filename ("ephy-download-XXXXXX", NULL);
+    destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
+    destination_uri = g_filename_to_uri (destination, NULL, NULL);
+    webkit_download_set_destination_uri (download, destination_uri);
+
+    g_signal_connect (G_OBJECT (download), "notify::status",
+                      G_CALLBACK (crx_update_xml_download_status_changed_cb), install_data);
+    webkit_download_start (download);
+    result = TRUE;
+
+  }
+
+ finish:
+  g_free (full_uri);
 
   return result;
 }
@@ -2065,6 +2267,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   char *icon_data = NULL;
   char *localized_name = NULL;
   char *web_url = NULL;
+  char *update_url = NULL;
   JSObjectRef callback_function = NULL;
 
   if (argumentCount > 2 || 
@@ -2121,7 +2324,6 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
           json_node_free (node);
         }
 
-        root_node = json_parser_get_root (parser);
         node = json_path_query ("$.description", root_node, NULL);
         if (node) {
           if (JSON_NODE_HOLDS_ARRAY (node)) {
@@ -2133,13 +2335,23 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
           json_node_free (node);
         }
 
-        root_node = json_parser_get_root (parser);
         node = json_path_query ("$.app.launch.web_url", root_node, NULL);
         if (node) {
           if (JSON_NODE_HOLDS_ARRAY (node)) {
             JsonArray *array = json_node_get_array (node);
             if (json_array_get_length (array) > 0) {
               web_url = g_strdup (json_array_get_string_element (array, 0));
+            }
+          }
+          json_node_free (node);
+        }
+
+        node = json_path_query ("$.update_url", root_node, NULL);
+        if (node) {
+          if (JSON_NODE_HOLDS_ARRAY (node)) {
+            JsonArray *array = json_node_get_array (node);
+            if (json_array_get_length (array) > 0) {
+              update_url = g_strdup (json_array_get_string_element (array, 0));
             }
           }
           json_node_free (node);
@@ -2227,8 +2439,13 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     }
 
     install_data = g_slice_new0 (ChromeWebstoreInstallData);
+    install_data->id = g_strdup (id);
+    install_data->app = g_object_ref (app);
     install_data->error = NULL;
     install_data->manifest_data = g_strdup (manifest);
+    install_data->update_url = update_url?g_strdup(update_url):DEFAULT_CHROME_WEBSTORE_CRX_UPDATE_PATH;
+    install_data->icon_url = g_strdup (used_icon_url);
+    install_data->icon_pixbuf = icon_pixbuf?g_object_ref (icon_pixbuf):NULL;
     install_data->context = JSGlobalContextCreateInGroup (JSContextGetGroup (context), NULL);
     install_data->callback_function = callback_function;
     install_data->this_object = thisObject;
@@ -2237,10 +2454,13 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (callback_function)
       JSValueProtect (context, callback_function);
 
-    ephy_web_application_show_install_dialog (NULL,
-                                              _("Install Chrome web store application"), _("Install"),
-                                              app, used_icon_url, icon_pixbuf,
-                                              chrome_webstore_install_cb, install_data);
+    if (!chrome_retrieve_crx_update_xml (app, install_data)) {
+
+      ephy_web_application_show_install_dialog (NULL,
+                                                _("Install Chrome web store application"), _("Install"),
+                                                app, used_icon_url, icon_pixbuf,
+                                                chrome_webstore_install_cb, install_data);
+    }
     g_object_unref (app);
     g_free (used_icon_url);
     if (icon_pixbuf) g_object_unref (icon_pixbuf);
