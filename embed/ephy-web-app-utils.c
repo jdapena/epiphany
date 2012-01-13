@@ -1151,7 +1151,8 @@ typedef struct {
 static JSValueRef
 finish_install_manifest (EphyMozAppInstallManifestData *manifest_data, JSValueRef *exception)
 {
-  JSContextRef context;
+  JSGlobalContextRef context;
+  JSValueRef result;
   context = manifest_data->context;
 
   if (*exception == NULL && manifest_data->error == NULL && manifest_data->onSuccessCallback) {
@@ -1229,10 +1230,16 @@ finish_install_manifest (EphyMozAppInstallManifestData *manifest_data, JSValueRe
     g_error_free (manifest_data->error);
   g_slice_free (EphyMozAppInstallManifestData, manifest_data);
 
-  if (*exception)
-    return JSValueMakeNull (context);
-  else
-    return JSValueMakeUndefined (context);
+  if (manifest_data->thisObject)
+    JSValueUnprotect (context, manifest_data->thisObject);
+  if (manifest_data->onSuccessCallback)
+    JSValueUnprotect (context, manifest_data->onSuccessCallback);
+  if (manifest_data->onErrorCallback)
+    JSValueUnprotect (context, manifest_data->onErrorCallback);
+
+  result = (*exception != NULL)?JSValueMakeNull(context):JSValueMakeUndefined(context);
+  JSGlobalContextRelease (context);
+  return result;
 }
 
 static void
@@ -1350,17 +1357,22 @@ mozapps_install (JSContextRef context,
   install_manifest_data->install_origin = NULL;
   install_manifest_data->receipt = g_strdup (receipt);
   install_manifest_data->context = JSObjectGetPrivate (thisObject);
+  JSGlobalContextRetain (install_manifest_data->context);
   install_manifest_data->thisObject = thisObject;
+  if (thisObject != NULL)
+    JSValueProtect (context, install_manifest_data->thisObject);
   install_manifest_data->onSuccessCallback = NULL;
   install_manifest_data->onErrorCallback = NULL;
   install_manifest_data->error = NULL;
 
   if (argumentCount > 2) {
     install_manifest_data->onSuccessCallback = arguments[2];
+    JSValueProtect (context, install_manifest_data->onSuccessCallback);
   }
 
   if (argumentCount > 3) {
     install_manifest_data->onErrorCallback = arguments[3];
+    JSValueProtect (context, install_manifest_data->onErrorCallback);
   }
 
   {
@@ -1413,7 +1425,7 @@ mozapps_install (JSContextRef context,
 
   g_signal_connect (G_OBJECT (download), "notify::status",
                     G_CALLBACK (mozapp_install_manifest_download_status_changed_cb), install_manifest_data);
-
+  
   webkit_download_start (download);
 
   return JSValueMakeUndefined(context);
@@ -1949,6 +1961,91 @@ chrome_webstore_private_install (JSContextRef context,
   return JSValueMakeNull (context);
 }
 
+typedef struct {
+  char *manifest_data;
+  GError *error;
+  JSGlobalContextRef context;
+  JSObjectRef this_object;
+  JSObjectRef callback_function;
+} ChromeWebstoreInstallData;
+
+static void
+finish_chrome_webstore_install_data (ChromeWebstoreInstallData *install_data)
+{
+  if (install_data->callback_function && 
+      JSObjectIsFunction (install_data->context, install_data->callback_function)) {
+    JSStringRef result_string;
+    JSValueRef parameters[1];
+
+    if (install_data->error) {
+      if (install_data->error->domain == ERROR_QUARK) {
+        switch (install_data->error->code) {
+        case EPHY_WEB_APPLICATION_FORBIDDEN:
+          result_string = JSStringCreateWithUTF8CString ("permission_denied"); break;
+        case EPHY_WEB_APPLICATION_CANCELLED:
+          result_string = JSStringCreateWithUTF8CString ("user_cancelled"); break;
+        default:
+          result_string = JSStringCreateWithUTF8CString ("unknown_error");
+        }
+      } else {
+        result_string = JSStringCreateWithUTF8CString ("unknown_error");
+      }
+    } else {
+      result_string = JSStringCreateWithUTF8CString ("");
+    }
+    parameters[0] = JSValueMakeString (install_data->context, result_string);
+    JSStringRelease (result_string);
+
+    if (JSObjectIsFunction (install_data->context, install_data->callback_function)) {
+      JSObjectCallAsFunction (install_data->context, install_data->callback_function, install_data->this_object, 1, parameters, NULL);
+    }
+  }
+
+  if (install_data->callback_function)
+    JSValueUnprotect (install_data->context, install_data->callback_function);
+  if (install_data->this_object)
+    JSValueUnprotect (install_data->context, install_data->this_object);
+  JSGlobalContextRelease (install_data->context);
+
+  g_free (install_data->manifest_data);
+  if (install_data->error) {
+    g_error_free (install_data->error);
+  }
+  g_slice_free (ChromeWebstoreInstallData, install_data);
+}
+
+static gboolean 
+chrome_webstore_install_cb (gint response,
+                            EphyWebApplication *app,
+                            gpointer userdata)
+{
+  gboolean result = TRUE;
+  ChromeWebstoreInstallData *install_data = (ChromeWebstoreInstallData *) userdata;
+
+  if (response == GTK_RESPONSE_OK) {
+    {
+      char *manifest_install_path;
+
+      manifest_install_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
+
+      result = g_file_set_contents (manifest_install_path,
+                                    install_data->manifest_data,
+                                    -1,
+                                    &(install_data->error));
+
+      g_free (manifest_install_path);
+    }
+
+  } else {
+    g_set_error (&(install_data->error), ERROR_QUARK,
+                 EPHY_WEB_APPLICATION_CANCELLED, "User cancelled installation");
+  }
+
+  finish_chrome_webstore_install_data (install_data);
+
+  return result;
+}
+
 static JSValueRef
 chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
                                                      JSObjectRef function,
@@ -1968,12 +2065,15 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   char *icon_data = NULL;
   char *localized_name = NULL;
   char *web_url = NULL;
-  JSObjectRef manifest_obj = NULL;
+  JSObjectRef callback_function = NULL;
 
   if (argumentCount > 2 || 
       !JSValueIsObject (context, arguments[0])) {
     *exception = JSValueMakeNumber (context, 1);
     return JSValueMakeNull (context);
+  } else if (argumentCount == 2) {
+    callback_function = JSValueToObject (context, arguments[1], exception);
+    if (*exception) return JSValueMakeNull (context);
   }
 
   details_obj = JSValueToObject (context, arguments[0], exception);
@@ -1995,14 +2095,60 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   if (*exception) goto finish;
   if (JSValueIsString (context, prop_value)) {
     JSStringRef manifest_string;
-    JSValueRef manifest_value;
+
     manifest_string = JSValueToStringCopy (context, prop_value, exception);
-    if (*exception) goto finish;
-    manifest_value = JSValueMakeFromJSONString (context, manifest_string);
-    if (JSValueIsObject (context, manifest_value)) {
-      manifest_obj = JSValueToObject (context, manifest_value, exception);
+    if (*exception == NULL) {
+      JsonParser *parser;
+      GError *error = NULL;
+
+      manifest = js_string_to_utf8 (manifest_string);
+      parser = json_parser_new ();
+
+
+      if (json_parser_load_from_data (parser, manifest, -1, &error)) {
+        JsonNode *root_node;
+        JsonNode *node;
+
+        root_node = json_parser_get_root (parser);
+        node = json_path_query ("$.name", root_node, NULL);
+        if (node) {
+          if (JSON_NODE_HOLDS_ARRAY (node)) {
+            JsonArray *array = json_node_get_array (node);
+            if (json_array_get_length (array) > 0) {
+              name = g_strdup (json_array_get_string_element (array, 0));
+            }
+          }
+          json_node_free (node);
+        }
+
+        root_node = json_parser_get_root (parser);
+        node = json_path_query ("$.description", root_node, NULL);
+        if (node) {
+          if (JSON_NODE_HOLDS_ARRAY (node)) {
+            JsonArray *array = json_node_get_array (node);
+            if (json_array_get_length (array) > 0) {
+              description = g_strdup (json_array_get_string_element (array, 0));
+            }
+          }
+          json_node_free (node);
+        }
+
+        root_node = json_parser_get_root (parser);
+        node = json_path_query ("$.app.launch.web_url", root_node, NULL);
+        if (node) {
+          if (JSON_NODE_HOLDS_ARRAY (node)) {
+            JsonArray *array = json_node_get_array (node);
+            if (json_array_get_length (array) > 0) {
+              web_url = g_strdup (json_array_get_string_element (array, 0));
+            }
+          }
+          json_node_free (node);
+        }
+
+      } else if (error != NULL) {
+        g_warning ("%s : failed parsing manifest json: %s", __FUNCTION__, error->message);
+      }
     }
-    manifest = js_string_to_utf8 (manifest_string);
   }
   g_warning ("%s : retrieved manifest: %s", __FUNCTION__, manifest?manifest:"(null)");
 
@@ -2039,65 +2185,11 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   }
   g_warning ("%s : retrieved localizedName: %s", __FUNCTION__, localized_name?localized_name:"(null)");
 
-  prop_name = JSStringCreateWithUTF8CString ("name");
-  prop_value = JSObjectGetProperty (context, manifest_obj, prop_name, exception);
-  if (*exception) goto finish;
-  if (JSValueIsString (context, prop_value)) {
-    JSStringRef name_string;
-    name_string = JSValueToStringCopy (context, prop_value, exception);
-    if (*exception) goto finish;
-    name = js_string_to_utf8 (name_string);
-  }
-  g_warning ("%s : retrieved name: %s", __FUNCTION__, name?name:"(null)");
-
-  prop_name = JSStringCreateWithUTF8CString ("description");
-  prop_value = JSObjectGetProperty (context, manifest_obj, prop_name, exception);
-  if (*exception) goto finish;
-  if (JSValueIsString (context, prop_value)) {
-    JSStringRef description_string;
-    description_string = JSValueToStringCopy (context, prop_value, exception);
-    if (*exception) goto finish;
-    description = js_string_to_utf8 (description_string);
-  }
-  g_warning ("%s : retrieved description: %s", __FUNCTION__, description?description:"(null)");
-
-  prop_name = JSStringCreateWithUTF8CString ("app");
-  prop_value = JSObjectGetProperty (context, manifest_obj, prop_name, exception);
-  if (*exception) goto finish;
-  if (JSValueIsObject (context, prop_value)) {
-    JSObjectRef app_obj;
-
-    app_obj = JSValueToObject (context, prop_value, exception);
-    if (*exception) goto finish;
-
-    prop_name = JSStringCreateWithUTF8CString ("launch");
-    prop_value = JSObjectGetProperty (context, app_obj, prop_name, exception);
-
-    if (*exception) goto finish;
-
-    if (JSValueIsObject (context, prop_value)) {
-      JSObjectRef launch_obj;
-
-      launch_obj = JSValueToObject (context, prop_value, exception);
-      if (*exception) goto finish;
-
-      prop_name = JSStringCreateWithUTF8CString ("web_url");
-      prop_value = JSObjectGetProperty (context, launch_obj, prop_name, exception);
-
-      if (JSValueIsString (context, prop_value)) {
-        JSStringRef web_url_string;
-        web_url_string = JSValueToStringCopy (context, prop_value, exception);
-        if (*exception) goto finish;
-        web_url = js_string_to_utf8 (web_url_string);
-      }
-
-    }
-    
-  }
-  g_warning ("%s : retrieved web url: %s", __FUNCTION__, web_url?web_url:"(null)");
-
-  if (name && manifest_obj && web_url) {
+  if (name && manifest && web_url) {
     EphyWebApplication *app;
+    char *used_icon_url = NULL;
+    GdkPixbuf *icon_pixbuf = NULL;
+    ChromeWebstoreInstallData *install_data;
 
     app = ephy_web_application_new ();
 
@@ -2107,19 +2199,55 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
 
     ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
 
+    if (icon_data) {
+      GdkPixbufLoader *loader;
+      guchar *icon_data_decoded;
+      gsize length = 0;
+      GError *error = NULL;
+
+      icon_data_decoded = g_base64_decode (icon_data, &length);
+
+      loader = gdk_pixbuf_loader_new ();
+      if (gdk_pixbuf_loader_write (loader, icon_data_decoded, length, &error)) {
+        icon_pixbuf = gdk_pixbuf_loader_get_pixbuf (loader);
+      } else {
+        g_warning ("%s: %s", __FUNCTION__, error->message);
+      }
+      g_free (icon_data_decoded);
+
+      g_object_unref (loader);
+    }
+
+    if (icon_url && !icon_pixbuf) {
+      if (g_str_has_prefix (icon_url, "//")) {
+        used_icon_url = g_strconcat ("http:", icon_url, NULL);
+      } else {
+        used_icon_url = g_strdup (icon_url);
+      }
+    }
+
+    install_data = g_slice_new0 (ChromeWebstoreInstallData);
+    install_data->error = NULL;
+    install_data->manifest_data = g_strdup (manifest);
+    install_data->context = JSGlobalContextCreateInGroup (JSContextGetGroup (context), NULL);
+    install_data->callback_function = callback_function;
+    install_data->this_object = thisObject;
+    if (thisObject)
+      JSValueProtect (context, thisObject);
+    if (callback_function)
+      JSValueProtect (context, callback_function);
+
     ephy_web_application_show_install_dialog (NULL,
                                               _("Install Chrome web store application"), _("Install"),
-                                              app, icon_url, NULL,
-                                              NULL, NULL);
+                                              app, used_icon_url, icon_pixbuf,
+                                              chrome_webstore_install_cb, install_data);
     g_object_unref (app);
+    g_free (used_icon_url);
+    if (icon_pixbuf) g_object_unref (icon_pixbuf);
 
   } else if (argumentCount == 2) {
-    JSObjectRef callback_function;
     JSStringRef result_string;
     JSValueRef parameters[1];
-
-    callback_function = JSValueToObject (context, arguments[1], exception);
-    if (*exception) goto finish;
 
     result_string = JSStringCreateWithUTF8CString ("manifest_error");
     parameters[0] = JSValueMakeString (context, result_string);
@@ -2447,7 +2575,8 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   JSStringRelease (prop_name);
 
   chrome_webstore_private_class = JSClassCreate (&chrome_webstore_private_class_def);
-  chrome_webstore_private_obj = JSObjectMake (context, chrome_webstore_private_class, NULL);
+  chrome_webstore_private_obj = JSObjectMake (context, chrome_webstore_private_class, context);
+  JSObjectSetPrivate (chrome_webstore_private_obj, context);
   prop_name = JSStringCreateWithUTF8CString ("webstorePrivate");
   JSObjectSetProperty (context, chrome_obj, prop_name, chrome_webstore_private_obj, kJSPropertyAttributeNone, &exception);
   JSStringRelease (prop_name);
