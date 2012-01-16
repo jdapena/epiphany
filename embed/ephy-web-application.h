@@ -59,6 +59,7 @@ typedef enum
   EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, /* mozilla: manifestParseError */
   EPHY_WEB_APPLICATION_MANIFEST_INVALID, /* mozilla: invalidManifest */
   EPHY_WEB_APPLICATION_NETWORK, /* mozilla: networkError */
+  EPHY_WEB_APPLICATION_CRX_EXTRACT_FAILED, /* Chrome webstore CRX: couldn't extract */
 } EphyWebApplicationError;
 
 #define EPHY_WEB_APPLICATION_METADATA_FILE "ephy-web-app.metadata"
@@ -70,6 +71,7 @@ typedef enum
 #define EPHY_WEB_APPLICATION_CHROME_MANIFEST "ephy-web-app.chrome-manifest.json"
 #define EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST "ephy-web-app.chrome-webstore-manifest.json"
 #define EPHY_WEB_APPLICATION_CHROME_CRX "ephy-web-app.chrome-webstore-extension.crx"
+#define EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS "ephy-web-app.chrome-webstore-crx-contents"
 
 typedef struct _EphyWebApplication EphyWebApplication;
 typedef struct _EphyWebApplicationClass EphyWebApplicationClass;

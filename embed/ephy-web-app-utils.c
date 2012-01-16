@@ -26,6 +26,8 @@
 #include "ephy-file-helpers.h"
 #include "ephy-web-application.h"
 
+#include <archive.h>
+#include <archive_entry.h>
 #include <glib/gstdio.h>
 #include <glib/gi18n.h>
 #include <gtk/gtk.h>
@@ -1970,6 +1972,7 @@ chrome_webstore_private_install (JSContextRef context,
 typedef struct {
   EphyWebApplication *app;
   char *id;
+  char *default_locale;
   char *manifest_data;
   char *update_url;
   char *icon_url;
@@ -1996,6 +1999,11 @@ finish_chrome_webstore_install_data (ChromeWebstoreInstallData *install_data)
           result_string = JSStringCreateWithUTF8CString ("permission_denied"); break;
         case EPHY_WEB_APPLICATION_CANCELLED:
           result_string = JSStringCreateWithUTF8CString ("user_cancelled"); break;
+        case EPHY_WEB_APPLICATION_MANIFEST_URL_ERROR:
+        case EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR:
+        case EPHY_WEB_APPLICATION_MANIFEST_INVALID:
+        case EPHY_WEB_APPLICATION_CRX_EXTRACT_FAILED:
+          result_string = JSStringCreateWithUTF8CString ("manifest_error"); break;
         default:
           result_string = JSStringCreateWithUTF8CString ("unknown_error");
         }
@@ -2025,12 +2033,214 @@ finish_chrome_webstore_install_data (ChromeWebstoreInstallData *install_data)
   g_free (install_data->update_url);
   g_free (install_data->icon_url);
   g_free (install_data->id);
+  g_free (install_data->default_locale);
   if (install_data->icon_pixbuf)
     g_object_unref (install_data->icon_pixbuf);
   if (install_data->error) {
     g_error_free (install_data->error);
   }
   g_slice_free (ChromeWebstoreInstallData, install_data);
+}
+
+typedef struct {
+  char *crx_file_path;
+  char *extract_path;
+  char buffer[128];
+  GInputStream *crx_read;
+  GError *error;
+} CRXExtractData;
+
+typedef struct {
+  char magic_number[4];
+  guint32 version;
+  guint32 public_key_length;
+  guint32 signature_length;
+} CRXFirstHeader;
+
+static void
+finish_crx_extract_data (CRXExtractData *extract_data)
+{
+  g_free (extract_data->crx_file_path);
+  g_free (extract_data->extract_path);
+  g_free  (extract_data);
+}
+
+static ssize_t
+extract_data_archive_read (struct archive *archive, 
+                           void *data,
+                           const void **buffer)
+{
+  gssize read_bytes;
+  CRXExtractData *extract_data = (CRXExtractData *) data;
+
+  *buffer = extract_data->buffer;
+  read_bytes = g_input_stream_read (G_INPUT_STREAM (extract_data->crx_read),
+                                    extract_data->buffer,
+                                    sizeof (extract_data->buffer),
+                                    NULL,
+                                    &extract_data->error);
+  return read_bytes;
+}
+
+static int
+extract_data_archive_close (struct archive *zip_archive,
+                            void *data)
+{
+  CRXExtractData *extract_data = (CRXExtractData *) data;
+  g_object_unref (extract_data->crx_read);
+  extract_data->crx_read = NULL;
+
+  return ARCHIVE_OK;
+}
+
+static void
+crx_extract_thread (GSimpleAsyncResult *result,
+                    GObject *object,
+                    GCancellable *cancellable)
+{
+  CRXExtractData *extract_data;
+  GFile *crx_file;
+  GInputStream *crx_is = NULL;
+  GInputStream *crx_read = NULL;
+  GError *error = NULL;
+  CRXFirstHeader first_header;
+  int skip_count;
+  struct archive *zip_archive = NULL;
+  int archive_result;
+  char *buffer;
+
+  extract_data = g_simple_async_result_get_op_res_gpointer (result);
+
+  crx_file = g_file_new_for_path (extract_data->crx_file_path);
+  crx_is = (GInputStream *) g_file_read (crx_file, cancellable, &error);
+  g_object_unref (crx_file);
+  if (error) goto finish;
+  crx_read = (GInputStream *) g_data_input_stream_new (crx_is);
+  extract_data->crx_read = g_object_ref (crx_read);
+  g_object_unref (crx_is);
+  g_data_input_stream_set_byte_order (G_DATA_INPUT_STREAM (crx_read), G_LITTLE_ENDIAN);
+
+  buffer = (char *) &first_header;
+  bzero (buffer, sizeof (first_header));
+
+  do {
+    gsize bytes_read = 0;
+
+    memmove (buffer, buffer + 1, sizeof (first_header) - 1);
+
+    if (!g_input_stream_read_all (crx_read, buffer + (sizeof (first_header) - 1), sizeof (char) , &bytes_read, cancellable, &error) || bytes_read == 0) {
+      g_set_error (&error, ERROR_QUARK, EPHY_WEB_APPLICATION_CRX_EXTRACT_FAILED, "CRX header not found");
+      goto finish;
+    }
+
+    if (strncmp (first_header.magic_number, "Cr24", 4) != 0) {
+      continue;
+    }
+
+    if (first_header.version != 2) {
+      continue;
+    }
+    break;
+  } while (TRUE);
+
+  /* We don't implement signature check, so we skip */
+  skip_count = first_header.public_key_length + first_header.signature_length;
+  while (skip_count > 0) {
+    gssize result;
+    result = g_input_stream_skip (crx_read, skip_count, cancellable, &error);
+    if (result == -1) {
+      goto finish;
+    }
+    skip_count -= result;
+  }
+
+  /* So offset now is the zip file, we use libarchive with it */
+  zip_archive = archive_read_new ();
+  archive_read_support_format_zip (zip_archive);
+  archive_read_open (zip_archive, extract_data,
+                     NULL,
+                     extract_data_archive_read,
+                     extract_data_archive_close);
+  
+  do {
+    struct archive_entry *entry;
+    archive_result = archive_read_next_header (zip_archive, &entry);
+
+    if (archive_result >= ARCHIVE_WARN && archive_result <= ARCHIVE_OK) {
+      if (archive_result < ARCHIVE_OK) {
+        archive_set_error (zip_archive, ARCHIVE_OK, "No error");
+        archive_clear_error (zip_archive);
+
+      } else {
+        char *new_path;
+        new_path = g_strdup_printf ("%s/%s", extract_data->extract_path, archive_entry_pathname (entry));
+        archive_entry_set_pathname (entry, new_path);
+        archive_result = archive_read_extract (zip_archive, entry, 0);
+        g_free (new_path);
+      }
+    }
+
+  } while (archive_result != ARCHIVE_EOF && archive_result != ARCHIVE_FATAL);
+  
+
+ finish:
+
+  if (zip_archive) {
+    archive_read_finish (zip_archive);
+  }
+  if (crx_read) {
+    if (!g_input_stream_is_closed (crx_read))
+      g_input_stream_close (crx_read, cancellable, &error);
+    g_object_unref  (crx_read);
+  }
+  if (error) {
+    extract_data->error = g_error_copy (error);
+    g_error_free (error);
+  }
+}
+
+static void
+crx_extract (const char *crx_file_path,
+             const char *extract_path,
+             gint io_priority,
+             GCancellable *cancellable,
+             GAsyncReadyCallback callback,
+             gpointer userdata)
+{
+  GSimpleAsyncResult *simple;
+  CRXExtractData *extract_data;
+
+  simple = g_simple_async_result_new (NULL,
+                                      callback, userdata,
+                                      crx_extract);
+
+  extract_data = g_new0 (CRXExtractData, 1);
+  g_simple_async_result_set_op_res_gpointer (simple, extract_data, (GDestroyNotify) finish_crx_extract_data);
+  extract_data->crx_file_path = g_strdup (crx_file_path);
+  extract_data->extract_path = g_strdup (extract_path);
+  
+  if (g_mkdir_with_parents (extract_path, 0755) == -1) {
+    g_set_error (&(extract_data->error), ERROR_QUARK, 
+                 EPHY_WEB_APPLICATION_CRX_EXTRACT_FAILED,
+                 "Couldn't create destination folder");
+    g_simple_async_result_complete_in_idle (simple);
+    g_object_unref (simple);
+    return;
+  }
+
+  g_simple_async_result_run_in_thread (simple, crx_extract_thread, io_priority, cancellable);
+  g_object_unref (simple);
+}
+
+static gboolean
+crx_extract_finish (GAsyncResult *result,
+                    GError **error)
+{
+  CRXExtractData *extract_data;
+  extract_data = g_simple_async_result_get_op_res_gpointer (G_SIMPLE_ASYNC_RESULT (result));
+  if (extract_data->error)
+    *error = g_error_copy (extract_data->error);
+  return *error == NULL;
 }
 
 static gboolean 
@@ -2054,23 +2264,6 @@ chrome_webstore_install_cb (gint response,
 
       g_free (manifest_install_path);
 
-      if (install_data->crx_file_path) {
-        char *crx_path;
-        GFile *origin_crx, *destination_crx;
-
-        origin_crx = g_file_new_for_path (install_data->crx_file_path);
-        crx_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX);
-        destination_crx = g_file_new_for_path (crx_path);
-
-        g_file_copy (origin_crx, destination_crx, 
-                     G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
-                     NULL, NULL, NULL, 
-                     NULL);
-
-        g_object_unref (origin_crx);
-        g_object_unref (destination_crx);
-        g_free (crx_path);
-      }
     }
 
   } else {
@@ -2083,6 +2276,108 @@ chrome_webstore_install_cb (gint response,
   return result;
 }
 
+static char *
+crx_extract_msg_id (const char *str)
+{
+  if (g_str_has_prefix (str, "__MSG_") && g_str_has_suffix (str + 6, "__"))
+    return (g_strndup (str + 6, strlen(str) - 8));
+  else
+    return NULL;
+}
+
+static char *
+crx_get_translation (const char *path, const char *key, const char * default_locale)
+{
+  char ** lang;
+  char *result = NULL;
+  char *key_json_path;
+
+  key_json_path = g_strconcat ("$.", key, ".message", NULL);
+
+  for (lang = (char **) g_get_language_names (); ; lang++) {
+    char * file_path;
+    GFile *file;
+
+    if (*lang == NULL && default_locale == NULL)
+      break;
+
+    file_path = g_build_filename (path, "_locales", *lang?*lang:default_locale, "messages.json", NULL);
+    file = g_file_new_for_path (file_path);
+    if (g_file_query_exists (file, NULL)) {
+      JsonParser *parser;
+
+      parser = json_parser_new ();
+      if (json_parser_load_from_file (parser, file_path, NULL)) {
+        JsonNode *root_node;
+        JsonNode *node;
+
+        root_node = json_parser_get_root (parser);
+        node = json_path_query (key_json_path, root_node, NULL);
+        if (node) {
+          if (JSON_NODE_HOLDS_ARRAY (node)) {
+            JsonArray *array = json_node_get_array (node);
+            if (json_array_get_length (array) > 0) {
+              result = g_strdup (json_array_get_string_element (array, 0));
+            }
+          }
+          json_node_free (node);
+        }
+
+      }
+    }
+    g_object_unref (file);
+    g_free (file_path);
+    if (*lang == NULL || result != NULL)
+      break;
+  }
+  g_free (key_json_path);
+
+  return result;
+}
+
+static void
+on_crx_extract (GObject *object,
+                GAsyncResult *result,
+                gpointer userdata)
+{
+  GError *error = NULL;
+  ChromeWebstoreInstallData *install_data = (ChromeWebstoreInstallData *) userdata;
+
+  if (crx_extract_finish (result, &error)) {
+    char *key_id;
+
+    char *crx_contents_path;
+
+    crx_contents_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
+
+    key_id = crx_extract_msg_id (ephy_web_application_get_name (EPHY_WEB_APPLICATION (install_data->app)));
+    if (key_id != NULL) {
+      char *name = crx_get_translation (crx_contents_path, key_id, install_data->default_locale);
+      ephy_web_application_set_name (install_data->app, name);
+      g_free (name);
+      g_free (key_id);
+    }
+
+    key_id = crx_extract_msg_id (ephy_web_application_get_description (EPHY_WEB_APPLICATION (install_data->app)));
+    if (key_id != NULL) {
+      char *description = crx_get_translation (crx_contents_path, key_id, install_data->default_locale);
+      ephy_web_application_set_description (install_data->app, description);
+      g_free (description);
+      g_free (key_id);
+    }
+
+    g_free (crx_contents_path);
+    ephy_web_application_show_install_dialog
+      (NULL,
+       _("Install Chrome web store application"), _("Install"),
+       install_data->app, install_data->icon_url, install_data->icon_pixbuf,
+       chrome_webstore_install_cb, install_data);
+  } else {
+    g_propagate_error (&(install_data->error), error);
+    finish_chrome_webstore_install_data (install_data);
+  }
+}
+
 static void
 crx_download_status_changed_cb (WebKitDownload *download,
                                 GParamSpec *spec,
@@ -2093,7 +2388,31 @@ crx_download_status_changed_cb (WebKitDownload *download,
   switch (status) {
   case WEBKIT_DOWNLOAD_STATUS_FINISHED:
     {
+      char *crx_path, *crx_contents_path;
+      GFile *origin_crx, *destination_crx;
+
       install_data->crx_file_path = g_filename_from_uri (webkit_download_get_destination_uri (download), NULL, NULL);
+
+      origin_crx = g_file_new_for_path (install_data->crx_file_path);
+      crx_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX);
+      crx_contents_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
+      destination_crx = g_file_new_for_path (crx_path);
+      crx_contents_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
+
+      g_file_copy (origin_crx, destination_crx, 
+                   G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
+                   NULL, NULL, NULL, 
+                   NULL);
+
+      crx_extract (install_data->crx_file_path, crx_contents_path,
+                   G_PRIORITY_DEFAULT_IDLE, NULL,
+                   on_crx_extract, install_data);
+
+      g_object_unref (origin_crx);
+      g_object_unref (destination_crx);
+      g_free (crx_path);
+
+      break;
     }
   case WEBKIT_DOWNLOAD_STATUS_ERROR:
   case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
@@ -2260,6 +2579,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   JSStringRef prop_name;
   JSValueRef prop_value;
   char *id = NULL;
+  char *default_locale = NULL;
   char *name = NULL;
   char *description = NULL;
   char *manifest = NULL;
@@ -2397,6 +2717,17 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   }
   g_warning ("%s : retrieved localizedName: %s", __FUNCTION__, localized_name?localized_name:"(null)");
 
+  prop_name = JSStringCreateWithUTF8CString ("default_locale");
+  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef default_locale_string;
+    default_locale_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+    default_locale = js_string_to_utf8 (default_locale_string);
+  }
+  g_warning ("%s : retrieved localizedName: %s", __FUNCTION__, localized_name?localized_name:"(null)");
+
   if (name && manifest && web_url) {
     EphyWebApplication *app;
     char *used_icon_url = NULL;
@@ -2440,6 +2771,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
 
     install_data = g_slice_new0 (ChromeWebstoreInstallData);
     install_data->id = g_strdup (id);
+    install_data->default_locale = g_strdup (default_locale);
     install_data->app = g_object_ref (app);
     install_data->error = NULL;
     install_data->manifest_data = g_strdup (manifest);

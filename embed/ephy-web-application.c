@@ -432,8 +432,9 @@ ephy_web_application_get_settings_file_name (EphyWebApplication *app,
   EphyWebApplicationPrivate *priv;
 
   priv = app->priv;
-  if (priv->profile_dir == NULL)
-    return NULL;
+  if (priv->profile_dir == NULL && priv->name != NULL) {
+    priv->profile_dir = ephy_web_application_get_profile_dir_from_name (priv->name);
+  }
 
   return g_build_filename (priv->profile_dir, base, NULL);
 }
@@ -778,13 +779,9 @@ ephy_web_application_install (EphyWebApplication *app,
    * uri, do nothing. */
   g_free (priv->profile_dir);
   priv->profile_dir = ephy_web_application_get_profile_dir_from_name (ephy_web_application_get_name (app));
-  if (g_file_test (profile_dir, G_FILE_TEST_IS_DIR)) {
-    g_set_error (error, ERROR_QUARK, 0, "Tried to overwrite an existing application");
-    goto out;
-  }
 
   /* Create the profile directory, populate it. */
-  if (g_mkdir (priv->profile_dir, 488) == -1) {
+  if (g_mkdir_with_parents (priv->profile_dir, 488) == -1) {
     g_set_error (error, ERROR_QUARK, 0, "Failed to create directory %s", profile_dir);
     goto out;
   }
