@@ -1729,6 +1729,15 @@ chrome_app_get_is_installed (JSContextRef context,
     
     is_installed = g_file_query_exists (manifest_file, NULL);
     g_object_unref (manifest_file);
+
+    if (!is_installed) {
+      manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
+      manifest_file = g_file_new_for_path (manifest_path);
+      g_free (manifest_path);
+    
+      is_installed = g_file_query_exists (manifest_file, NULL);
+      g_object_unref (manifest_file);
+    }
   }
 
   return is_installed?JSValueMakeBoolean (context, TRUE):JSValueMakeUndefined (context);
