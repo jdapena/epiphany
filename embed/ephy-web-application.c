@@ -625,6 +625,27 @@ out:
   return return_value;
 }
 
+gboolean
+ephy_web_application_launch (EphyWebApplication *app)
+{
+  char *desktop_file_path;
+  gboolean result;
+  char *uuid_envvar;
+
+  uuid_envvar = g_strdup (g_getenv (EPHY_UUID_ENVVAR));
+  g_unsetenv (EPHY_UUID_ENVVAR);
+
+  desktop_file_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_DESKTOP_FILE);
+  result = ephy_file_launch_desktop_file (desktop_file_path, NULL, 0, NULL);
+  g_free (desktop_file_path);
+
+  if (uuid_envvar) {
+    g_setenv (EPHY_UUID_ENVVAR, uuid_envvar, FALSE);
+    g_free (uuid_envvar);
+  }
+  return result;
+}
+
 static gboolean
 create_desktop_and_metadata_files (EphyWebApplication *app,
                                    GdkPixbuf *icon,

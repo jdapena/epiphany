@@ -106,6 +106,7 @@ gboolean                ephy_web_application_delete      (EphyWebApplication *ap
 gboolean                ephy_web_application_install     (EphyWebApplication *app,
                                                           GdkPixbuf *icon,
                                                           GError **error);
+gboolean                ephy_web_application_launch      (EphyWebApplication *app);
 
 const char *        ephy_web_application_get_name        (EphyWebApplication *app);
 void                ephy_web_application_set_name        (EphyWebApplication *app,
