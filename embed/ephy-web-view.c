@@ -1835,23 +1835,32 @@ window_object_cleared_cb (WebKitWebView *web_view,
 }
 
 static gboolean
-delete_web_app_cb (WebKitDOMHTMLElement *button,
-                   WebKitDOMEvent *dom_event,
-                   EphyWebView *web_view)
+process_web_app_cb (WebKitDOMHTMLElement *button,
+                    WebKitDOMEvent *dom_event,
+                    EphyWebView *web_view)
 {
-  char *id = NULL;
+  char *button_id = NULL;
 
-  id = webkit_dom_html_element_get_id (button);
-  if (id) {
-    EphyWebApplication *app;
+  button_id = webkit_dom_html_element_get_id (button);
+  if (button_id) {
+    char **tokens;
 
-    app = ephy_web_application_from_name (id);
-    if (app) {
-      ephy_web_application_delete (app, NULL);
+    tokens = g_strsplit (button_id, "-", 2);
+    if (tokens[0] && tokens[1]) {
+      EphyWebApplication *app;
+
+      app = ephy_web_application_from_name (tokens[1]);
+      if (app) {
+        if (g_strcmp0 (tokens[0], "delete") == 0)
+          ephy_web_application_delete (app, NULL);
+        else if (g_strcmp0 (tokens[0], "launch") == 0)
+          ephy_web_application_launch (app);
+      }
       g_object_unref (app);
     }
 
-    g_free (id);
+    g_strfreev (tokens);
+    g_free (button_id);
   }
 
   return FALSE;
@@ -2034,7 +2043,7 @@ load_status_cb (WebKitWebView *web_view,
 
         button = webkit_dom_node_list_item (buttons, i);
         webkit_dom_event_target_add_event_listener (WEBKIT_DOM_EVENT_TARGET (button), "click",
-                                                    G_CALLBACK (delete_web_app_cb), false,
+                                                    G_CALLBACK (process_web_app_cb), false,
                                                     NULL);
       }
     }

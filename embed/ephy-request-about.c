@@ -194,7 +194,7 @@ ephy_request_about_send (SoupRequest          *request,
         img_data_base64 = g_base64_encode ((guchar*)img_data, data_length);
       g_free (icon_url);
       g_string_append_printf (data_str, "<tbody><tr><td class=\"icon\"><img width=64 height=64 src=\"data:image/png;base64,%s\">" \
-                              " </img></td><td class=\"data\"><div class=\"appname\">%s</div><div class=\"appurl\"><span class=\"apporigin\">%s</span><span class=\"applaunchpath\">%s</span></div><div class=\"appdescription\">%s</div><div class=\"appdate\">%s %s</div></td><td class=\"input\"><input type=\"submit\" value=\"Delete\" id=\"%s\"></td></tr>",
+                              " </img></td><td class=\"data\"><div class=\"appname\">%s</div><div class=\"appurl\"><span class=\"apporigin\">%s</span><span class=\"applaunchpath\">%s</span></div><div class=\"appdescription\">%s</div><div class=\"appdate\">%s %s</div></td><td class=\"input\"><input type=\"submit\" value=\"Launch\" id=\"launch-%s\"><input type=\"submit\" value=\"Delete\" id=\"delete-%s\"></td></tr>",
                               img_data_base64,
                               ephy_web_application_get_name (app)?ephy_web_application_get_name (app):"",
                               ephy_web_application_get_origin (app)?ephy_web_application_get_origin (app):"",
@@ -202,6 +202,7 @@ ephy_request_about_send (SoupRequest          *request,
                               ephy_web_application_get_description (app)?ephy_web_application_get_description (app):"",
                               /* Note for translators: this refers to the installation date. */
                               _("Installed on:"), ephy_web_application_get_install_date (app),
+                              ephy_web_application_get_name (app)?ephy_web_application_get_name (app):"",
                               ephy_web_application_get_name (app)?ephy_web_application_get_name (app):"");
       g_free (img_data_base64);
       g_free (img_data);
