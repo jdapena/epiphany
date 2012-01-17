@@ -59,6 +59,15 @@ js_string_to_utf8 (JSStringRef js_string)
   return result;
 }
 
+/* Some strings in UTF-8 can be preceeded with Byte-Order Mark. We
+ * should strip it before passing it to the json-glib parser
+ */
+static const char *
+strip_utf8_bom_mark (const char *str)
+{
+  return g_str_has_prefix (str, "\357\273\277")?(str+3):str;
+}
+
 static char *
 get_origin (const char *url)
 {
@@ -2637,7 +2646,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
       parser = json_parser_new ();
 
 
-      if (json_parser_load_from_data (parser, manifest, -1, &error)) {
+      if (json_parser_load_from_data (parser, strip_utf8_bom_mark (manifest), -1, &error)) {
         JsonNode *root_node;
         JsonNode *node;
 
