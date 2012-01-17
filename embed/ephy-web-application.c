@@ -67,6 +67,7 @@ struct _EphyWebApplicationPrivate
   char *install_date;
   char *profile_dir;
   EphyWebApplicationStatus status;
+  GHashTable *custom_keys;
 };
 
 enum
@@ -455,6 +456,21 @@ ephy_web_application_is_mozilla_webapp (EphyWebApplication *app)
   return result;
 }
 
+const char *
+ephy_web_application_get_custom_key (EphyWebApplication *app,
+				     const char *key)
+{
+  return (const char*) g_hash_table_lookup (app->priv->custom_keys, (gpointer) key);
+}
+
+void
+ephy_web_application_set_custom_key (EphyWebApplication *app,
+				     const char *key,
+				     const char *value)
+{
+  g_hash_table_insert (app->priv->custom_keys, (gpointer) g_strdup (key), (gpointer) g_strdup (value));
+}
+
 gboolean
 ephy_web_application_load (EphyWebApplication *app,
                            const char *profile_dir,
@@ -487,11 +503,29 @@ ephy_web_application_load (EphyWebApplication *app,
       is_ok = (priv->name != NULL) && (priv->origin != NULL);
     }
     if (is_ok) {
+      char **custom_keys;
+      gsize length = 0, i;
+
       priv->launch_path = g_key_file_get_string (key, "Application", "LaunchPath", NULL);
       priv->install_origin = g_key_file_get_string (key, "Application", "InstallOrigin", NULL);
       priv->description = g_key_file_get_string (key, "Application", "Description", NULL);
       priv->author = g_key_file_get_string (key, "Application", "Author", NULL);
       priv->author_url = g_key_file_get_string (key, "Application", "AuthorURL", NULL);
+
+      g_hash_table_remove_all (priv->custom_keys);
+
+      custom_keys = g_key_file_get_keys (key, "CustomKeys", &length, NULL);
+      for (i = 0; i < length; i++) {
+        char *value;
+
+        value = g_key_file_get_string (key, "CustomKeys", custom_keys[i], NULL);
+        if (value) {
+          ephy_web_application_set_custom_key (app, custom_keys[i], value);
+          g_free (value);
+        }
+      }
+      g_strfreev (custom_keys);
+
     }
     g_key_file_free (key);
   }
@@ -638,6 +672,22 @@ create_desktop_and_metadata_files (EphyWebApplication *app,
   g_key_file_set_value (desktop_file, "Desktop Entry", "StartupNotification", "true");
   g_key_file_set_value (desktop_file, "Desktop Entry", "Terminal", "false");
   g_key_file_set_value (desktop_file, "Desktop Entry", "Type", "Application");
+
+  {
+    GList *custom_keys, *node;
+
+    custom_keys = g_hash_table_get_keys (priv->custom_keys);
+    for (node = custom_keys; node != NULL; node = g_list_next (node)) {
+      char *key = (char *) node->data;
+      if (key) {
+        char *value = (char *) g_hash_table_lookup (priv->custom_keys, (gpointer) key);
+        if (value) {
+          g_key_file_set_value (metadata_file, "CustomKeys", key, value);
+        }
+      }
+    }
+    g_list_free (custom_keys);
+  }
 
   if (icon) {
     GOutputStream *stream;
@@ -832,6 +882,7 @@ ephy_web_application_finalize (GObject *object)
   g_free (priv->launch_path);
   g_free (priv->install_date);
   g_free (priv->profile_dir);
+  g_hash_table_unref (priv->custom_keys);
 
   LOG ("EphyWebApplication finalised %p", object);
 
@@ -1018,6 +1069,7 @@ ephy_web_application_init (EphyWebApplication *app)
   app->priv->profile_dir = NULL;
   app->priv->install_date = NULL;
   app->priv->status = EPHY_WEB_APPLICATION_EMPTY;
+  app->priv->custom_keys = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
 
 }
 
@@ -1221,4 +1273,14 @@ ephy_web_application_set_full_uri (EphyWebApplication *app,
 
   g_object_notify (G_OBJECT (app), "origin");
   g_object_notify (G_OBJECT (app), "launch-path");
+}
+
+char *
+ephy_web_application_get_full_uri    (EphyWebApplication *app)
+{
+  EphyWebApplicationPrivate *priv;
+
+  priv = app->priv;
+
+  return priv->origin?g_strconcat (priv->origin, priv->launch_path, NULL):g_strdup(priv->launch_path);
 }

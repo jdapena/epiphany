@@ -657,7 +657,7 @@ mozapp_install_cb (gint response,
 
       receipt_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_MOZILLA_RECEIPT);
 
-      result = g_file_set_contents (receipt_path, mozapp_install_data->receipt, -1, &err);
+      result = g_file_set_contents (receipt_path, strip_utf8_bom_mark (mozapp_install_data->receipt), -1, &err);
 
       g_free (receipt_path);
     }
@@ -2276,7 +2276,7 @@ chrome_webstore_install_cb (gint response,
       manifest_install_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
 
       result = g_file_set_contents (manifest_install_path,
-                                    install_data->manifest_data,
+                                    strip_utf8_bom_mark (install_data->manifest_data),
                                     -1,
                                     &(install_data->error));
 
@@ -2791,6 +2791,9 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     install_data->id = g_strdup (id);
     install_data->default_locale = g_strdup (default_locale);
     install_data->app = g_object_ref (app);
+    if (id) {
+      ephy_web_application_set_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID, id);
+    }
     install_data->error = NULL;
     install_data->manifest_data = g_strdup (manifest);
     install_data->update_url = update_url?g_strdup(update_url):DEFAULT_CHROME_WEBSTORE_CRX_UPDATE_PATH;
@@ -3018,6 +3021,194 @@ NULL
 };
 
 static JSValueRef
+chrome_app_object_from_application (JSContextRef context, EphyWebApplication *app, const char *filter_id, JSValueRef *exception)
+{
+  GFile *manifest_file = NULL;
+  gboolean is_ok = TRUE;
+  JSObjectRef result = NULL;
+  char *manifest_path;
+  gboolean crx_less = FALSE;
+  JsonParser *parser = NULL;
+
+  manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
+  manifest_file = g_file_new_for_path (manifest_path);
+    
+  is_ok = g_file_query_exists (manifest_file, NULL);
+  g_object_unref (manifest_file);
+  if (!is_ok) {
+    g_free (manifest_path);
+
+    manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_MANIFEST);
+    manifest_file = g_file_new_for_path (manifest_path);
+    
+    is_ok = g_file_query_exists (manifest_file, NULL);
+    g_object_unref (manifest_file);
+    if (is_ok) crx_less = TRUE;
+  }
+  if (is_ok) {
+    parser = json_parser_new ();
+    is_ok = json_parser_load_from_file (parser, manifest_path, NULL);
+  }
+
+  if (is_ok) {
+    JsonNode *root_node, *node;
+
+    result = JSObjectMake (context, NULL, NULL);
+    
+    root_node = json_parser_get_root (parser);
+
+    {
+      const char *id;
+      id = ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID);
+      is_ok = crx_less || id;
+      if (is_ok && id) {
+        JSObjectSetProperty (context, result, 
+                             JSStringCreateWithUTF8CString ("id"),
+                             JSValueMakeString (context, JSStringCreateWithUTF8CString (id)), 
+                             kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                             exception);
+        is_ok = (*exception == NULL);
+      }
+    }
+
+    is_ok = is_ok && ephy_web_application_get_name (app);
+    if (is_ok) {
+      JSObjectSetProperty (context, result, 
+                           JSStringCreateWithUTF8CString ("name"),
+                           JSValueMakeString (context, JSStringCreateWithUTF8CString (ephy_web_application_get_name (app))), 
+                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                           exception);
+      is_ok = (*exception == NULL);
+    }
+
+    if (is_ok && ephy_web_application_get_description (app)) {
+      JSObjectSetProperty (context, result, 
+                           JSStringCreateWithUTF8CString ("description"),
+                           JSValueMakeString (context, JSStringCreateWithUTF8CString (ephy_web_application_get_description (app))), 
+                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                           exception);
+      is_ok = (*exception == NULL);
+    }
+    
+    if (is_ok) {
+      is_ok = crx_less;
+      node = json_path_query ("$.version", root_node, NULL);
+      if (node) {
+        if (JSON_NODE_HOLDS_ARRAY (node)) {
+          JsonArray *array = json_node_get_array (node);
+          if (json_array_get_length (array) > 0) {
+            const char *version = json_array_get_string_element (array, 0);
+            is_ok = crx_less || version;
+
+            if (is_ok && version) {
+              JSObjectSetProperty (context, result, 
+                                   JSStringCreateWithUTF8CString ("version"),
+                                   JSValueMakeString (context, JSStringCreateWithUTF8CString (version)), 
+                                   kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                                   exception);
+              is_ok = (*exception == NULL);
+            }
+          }
+        }
+        json_node_free (node);
+      }
+    }
+    
+    if (is_ok) {
+      JSObjectSetProperty (context, result, 
+                           JSStringCreateWithUTF8CString ("mayDisabled"),
+                           JSValueMakeBoolean (context, TRUE), 
+                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                           exception);
+      is_ok = (*exception == NULL);
+    }
+
+    if (is_ok) {
+      JSObjectSetProperty (context, result, 
+                           JSStringCreateWithUTF8CString ("enabled"),
+                           JSValueMakeBoolean (context, TRUE), 
+                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                           exception);
+      is_ok = (*exception == NULL);
+    }
+
+    if (is_ok) {
+      JSObjectSetProperty (context, result, 
+                           JSStringCreateWithUTF8CString ("isApp"),
+                           JSValueMakeBoolean (context, TRUE), 
+                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                           exception);
+      is_ok = (*exception == NULL);
+    }
+
+    if (is_ok) {
+      char *full_uri;
+      
+      full_uri = ephy_web_application_get_full_uri (app);
+      if (full_uri) {
+        JSObjectSetProperty (context, result, 
+                             JSStringCreateWithUTF8CString ("appLaunchUrl"),
+                             JSValueMakeString (context, JSStringCreateWithUTF8CString (full_uri)), 
+                             kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                             exception);
+        g_free (full_uri);
+        is_ok = (*exception == NULL);
+      }
+    }
+  }
+  g_free (manifest_path);
+  if (parser)
+    g_object_unref (parser);
+
+  if (*exception || !is_ok) {
+    return JSValueMakeNull (context);
+  } else {
+    return result;
+  }
+}
+
+static JSValueRef
+chrome_app_objects_from_id (JSContextRef context,
+                            const char * id,
+                            JSValueRef *exception)
+{
+  GList *applications, *node;
+  GList *js_objects_list = NULL;
+  int array_count;
+  JSValueRef *array_arguments = NULL;
+
+  applications = ephy_web_application_get_applications ();
+  for (node = applications; node != NULL; node = g_list_next (node)) {
+    EphyWebApplication *app = (EphyWebApplication *) node->data;
+    JSValueRef app_object;
+
+    app_object = chrome_app_object_from_application (context, app, id, exception);
+    if (app_object != NULL && ! JSValueIsNull (context, app_object)) {
+      js_objects_list = g_list_append (js_objects_list, JSValueToObject (context, app_object, exception));
+    }
+    if (*exception) {
+      break;
+    }
+  }
+  ephy_web_application_free_applications_list (applications);
+
+  array_count = g_list_length (js_objects_list);
+  if (array_count > 0) {
+    int i = 0;
+    array_arguments = g_malloc0 (sizeof(JSValueRef *) * array_count);
+    for (node = js_objects_list; node != NULL; node = g_list_next (node)) {
+      array_arguments[i] = (JSValueRef) node->data;
+      i++;
+    }
+  }
+  if (*exception) {
+    return JSValueMakeNull (context);
+  } else {
+    return JSObjectMakeArray (context, array_count, array_arguments, exception);
+  }
+}
+
+static JSValueRef
 chrome_management_get_all (JSContextRef context,
                            JSObjectRef function,
                            JSObjectRef thisObject,
@@ -3043,7 +3234,7 @@ chrome_management_get_all (JSContextRef context,
   {
     JSValueRef cb_arguments[1];
 
-    cb_arguments[0] = JSObjectMakeArray (context, 0, NULL, exception);
+    cb_arguments[0] = chrome_app_objects_from_id (context, NULL, exception);
 
     if (callback_function) {
       JSObjectCallAsFunction (context, callback_function, NULL, 1, cb_arguments, exception);

@@ -62,6 +62,7 @@ typedef enum
   EPHY_WEB_APPLICATION_CRX_EXTRACT_FAILED, /* Chrome webstore CRX: couldn't extract */
 } EphyWebApplicationError;
 
+/* Files */
 #define EPHY_WEB_APPLICATION_METADATA_FILE "ephy-web-app.metadata"
 #define EPHY_WEB_APPLICATION_DESKTOP_FILE "ephy-web-app.desktop"
 #define EPHY_WEB_APPLICATION_MOZILLA_MANIFEST "ephy-web-app.manifest"
@@ -72,6 +73,10 @@ typedef enum
 #define EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST "ephy-web-app.chrome-webstore-manifest.json"
 #define EPHY_WEB_APPLICATION_CHROME_CRX "ephy-web-app.chrome-webstore-extension.crx"
 #define EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS "ephy-web-app.chrome-webstore-crx-contents"
+
+/* Custom keys */
+#define EPHY_WEB_APPLICATION_CHROME_ID "chrome-id"
+
 
 typedef struct _EphyWebApplication EphyWebApplication;
 typedef struct _EphyWebApplicationClass EphyWebApplicationClass;
@@ -126,6 +131,7 @@ void                ephy_web_application_set_launch_path (EphyWebApplication *ap
 
 void                ephy_web_application_set_full_uri    (EphyWebApplication *app,
                                                           const char *full_uri);
+char *              ephy_web_application_get_full_uri    (EphyWebApplication *app);
 
 EphyWebApplicationStatus ephy_web_application_get_status (EphyWebApplication *app);
 void                ephy_web_application_set_status (EphyWebApplication *app,
@@ -138,6 +144,12 @@ char *              ephy_web_application_get_settings_file_name (EphyWebApplicat
                                                                  const char *base);
 
 gboolean            ephy_web_application_is_mozilla_webapp (EphyWebApplication *app);
+
+const char *        ephy_web_application_get_custom_key (EphyWebApplication *app,
+                                                         const char *key);
+void                ephy_web_application_set_custom_key (EphyWebApplication *app,
+                                                         const char *key,
+                                                         const char *value);
 
 
 GList * ephy_web_application_get_applications (void);
