@@ -3300,6 +3300,86 @@ chrome_management_uninstall (JSContextRef context,
                              const JSValueRef arguments[],
                              JSValueRef *exception)
 {
+  JSObjectRef callback_function = NULL;
+  gboolean uninstalled = FALSE;
+  JSStringRef id_string = NULL;
+
+  if (argumentCount > 2 || (argumentCount == 0) || !JSValueIsString(context, arguments[0])){
+    *exception = JSValueMakeNumber (context, 1);
+    return JSValueMakeNull (context);
+  }
+
+  if (argumentCount == 2) {
+    callback_function = JSValueToObject (context, arguments[0], exception);
+    if (!*exception && !JSObjectIsFunction (context, callback_function)) {
+      *exception = JSValueMakeNumber (context, 1);
+    }
+  }
+  if (*exception) return JSValueMakeNull (context);
+
+  {
+    id_string = JSValueToStringCopy (context, arguments[0], exception);
+    if (id_string) {
+      char *id;
+      GList *apps, *node;
+
+      id = js_string_to_utf8 (id_string);
+      apps = ephy_web_application_get_applications ();
+      for (node = apps; node != NULL; node = g_list_next (node)) {
+        EphyWebApplication *app = (EphyWebApplication *) node->data;
+        const char *app_id = ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID);
+        if (app_id && g_strcmp0 (id, app_id) == 0) {
+          if (!ephy_web_application_delete (app, NULL)) {
+            *exception = JSValueMakeNumber(context, 1);
+          } else {
+            uninstalled = TRUE;
+          }
+          break;
+        }
+      }
+      ephy_web_application_free_applications_list (apps);
+    }
+  }
+
+  if (callback_function) {
+    JSObjectCallAsFunction (context, callback_function, NULL, 0, NULL, exception);
+  }
+
+  if (uninstalled) {
+    JSStringRef on_uninstalled_string;
+    JSValueRef on_uninstalled_value;
+
+    on_uninstalled_string = JSStringCreateWithUTF8CString ("chrome.management.onUninstalled");
+    on_uninstalled_value = JSEvaluateScript (context, on_uninstalled_string, NULL, NULL, 0, NULL);
+    JSStringRelease (on_uninstalled_string);
+    if (on_uninstalled_value && JSValueIsObject (context, on_uninstalled_value)) {
+      JSObjectRef on_uninstalled;
+
+      on_uninstalled = JSValueToObject (context, on_uninstalled_value, exception);
+
+      if (on_uninstalled) {
+        JSStringRef prop_name;
+        JSValueRef launch_event_value;
+        
+        prop_name = JSStringCreateWithUTF8CString ("dispatch");
+        launch_event_value = JSObjectGetProperty (context, on_uninstalled, prop_name, exception);
+        JSStringRelease (prop_name);
+
+        if (launch_event_value && JSValueIsObject (context, launch_event_value)) {
+          JSObjectRef launch_event_function;
+
+          launch_event_function = JSValueToObject (context, launch_event_value, exception);
+          if (launch_event_function && JSObjectIsFunction (context, launch_event_function)) {
+            JSValueRef callback_arguments[1];
+
+            callback_arguments[0] = JSValueMakeString (context, id_string);
+            JSObjectCallAsFunction (context, launch_event_function, on_uninstalled, 1, callback_arguments, exception);
+          }
+        }
+      }
+    }
+  }
+  if (id_string) JSStringRelease (id_string);
   return JSValueMakeNull (context);
 }
 
