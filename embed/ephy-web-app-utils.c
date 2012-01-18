@@ -1047,7 +1047,7 @@ static JSValueRef mozapps_app_objects_from_install_origin (JSContextRef context,
 {
   GList *origin_applications, *node;
   GList *js_objects_list = NULL;
-  int array_count;
+  int array_count = 0;
   JSValueRef *array_arguments = NULL;
 
   origin_applications = ephy_web_application_get_applications_from_install_origin (origin);
@@ -1074,7 +1074,7 @@ static JSValueRef mozapps_app_objects_from_install_origin (JSContextRef context,
       i++;
     }
   }
-  if (*exception || array_count == 0) {
+  if (*exception) {
     return JSValueMakeNull (context);
   } else {
     return JSObjectMakeArray (context, array_count, array_arguments, exception);
