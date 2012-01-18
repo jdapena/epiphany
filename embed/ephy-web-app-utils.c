@@ -358,14 +358,15 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
   gtk_box_set_spacing (GTK_BOX (content_area), 14); /* 14 + 2 * 5 = 24 */
 
   hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
-  gtk_container_add (GTK_CONTAINER (content_area), hbox);
+  gtk_box_pack_start (GTK_BOX (content_area), hbox, TRUE, TRUE, 0);
 
   image = gtk_image_new ();
+  gtk_misc_set_alignment (GTK_MISC (image), 1.0, 0.0);
   gtk_widget_set_size_request (image, 128, 128);
-  gtk_container_add (GTK_CONTAINER (hbox), image);
+  gtk_box_pack_start (GTK_BOX (hbox), image, TRUE, TRUE, 0);
 
   vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
-  gtk_container_add (GTK_CONTAINER (hbox), vbox);
+  gtk_box_pack_start (GTK_BOX (hbox), vbox, TRUE, TRUE, 0);
 
   entry = gtk_entry_new ();
   gtk_entry_set_activates_default (GTK_ENTRY (entry), TRUE);
