@@ -148,7 +148,7 @@ download_status_changed_cb (WebKitDownload *download,
                             EphyApplicationDialogData *data)
 {
   WebKitDownloadStatus status = webkit_download_get_status (download);
-  const char *destination;
+  char *destination;
 
   switch (status)
   {
@@ -209,13 +209,10 @@ notify_launch_cb (NotifyNotification *notification,
                   char *action,
                   gpointer user_data)
 {
-  char * desktop_file = user_data;
-  /* A gross hack to be able to launch epiphany from within
-   * Epiphany. Might be a good idea to figure out a better
-   * solution... */
-  g_unsetenv (EPHY_UUID_ENVVAR);
-  ephy_file_launch_desktop_file (desktop_file, NULL, 0, NULL);
-  g_free (desktop_file);
+  EphyWebApplication *app = (EphyWebApplication *) user_data;
+
+  ephy_web_application_launch (app);
+  g_object_unref (app);
 }
 
 static gboolean
@@ -255,9 +252,8 @@ dialog_application_install_response_cb (GtkDialog *dialog,
                                         EphyApplicationDialogData *data)
 {
   gboolean created = FALSE;
+
   if (response == GTK_RESPONSE_OK) {
-    char *message;
-    NotifyNotification *notification;
     EphyWebApplication *existing_app;
 
     existing_app = 
@@ -286,6 +282,22 @@ dialog_application_install_response_cb (GtkDialog *dialog,
                                             gtk_image_get_pixbuf (GTK_IMAGE (data->image)),
                                             NULL);
 
+  }
+
+  gtk_widget_destroy (GTK_WIDGET (dialog));
+  if (data->callback) {
+    if (created) {
+      if (!data->callback (response, data->app, data->userdata)) {
+      }
+    } else {
+      data->callback (GTK_RESPONSE_CANCEL, data->app, data->userdata);
+    }
+  }
+
+  if (response == GTK_RESPONSE_OK) {
+    char *message;
+    NotifyNotification *notification;
+
     if (created) {
       message = g_strdup_printf (_("The application '%s' is ready to be used"),
                                  ephy_web_application_get_name (data->app));
@@ -293,40 +305,25 @@ dialog_application_install_response_cb (GtkDialog *dialog,
       message = g_strdup_printf (_("The application '%s' could not be created"),
                                  ephy_web_application_get_name (data->app));
       response = GTK_RESPONSE_CANCEL;
+      ephy_web_application_delete (data->app, NULL);
     }
 
     notification = notify_notification_new (message, NULL, NULL);
     g_free (message);
 
     if (created) {
-      char *desktop_file;
-
-      desktop_file =
-        ephy_web_application_get_settings_file_name (data->app,
-                                                     EPHY_WEB_APPLICATION_DESKTOP_FILE);
       notify_notification_add_action (notification, "launch", _("Launch"),
                                       (NotifyActionCallback)notify_launch_cb,
-                                      desktop_file,
+                                      g_object_ref (data->app),
                                       NULL);
       notify_notification_set_icon_from_pixbuf (notification,
                                                 gtk_image_get_pixbuf (GTK_IMAGE (data->image)));
-			g_free (desktop_file);
     }
 
     notify_notification_set_timeout (notification, NOTIFY_EXPIRES_DEFAULT);
     notify_notification_set_urgency (notification, NOTIFY_URGENCY_LOW);
     notify_notification_set_hint (notification, "transient", g_variant_new_boolean (TRUE));
     notify_notification_show (notification, NULL);
-  }
-
-  gtk_widget_destroy (GTK_WIDGET (dialog));
-  if (data->callback) {
-    if (created) {
-      if (!data->callback (response, data->app, data->userdata))
-        ephy_web_application_delete (data->app, NULL);
-    } else {
-      data->callback (GTK_RESPONSE_CANCEL, data->app, data->userdata);
-    }
   }
 
   ephy_application_dialog_data_free (data);
