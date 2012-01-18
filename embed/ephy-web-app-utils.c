@@ -155,8 +155,9 @@ download_status_changed_cb (WebKitDownload *download,
 	case WEBKIT_DOWNLOAD_STATUS_FINISHED:
     destination = g_filename_from_uri (webkit_download_get_destination_uri (download),
                                        NULL, NULL);
-	  gtk_image_set_from_file (GTK_IMAGE (data->image), destination);
-	  break;
+    gtk_image_set_from_file (GTK_IMAGE (data->image), destination);
+    g_free (destination);
+    break;
   case WEBKIT_DOWNLOAD_STATUS_ERROR:
   case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
   default:
@@ -179,8 +180,8 @@ download_icon_and_set_image (EphyApplicationDialogData *data)
   destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
   destination_uri = g_filename_to_uri (destination, NULL, NULL);
   webkit_download_set_destination_uri (download, destination_uri);
-  g_free (destination);
   g_free (destination_uri);
+  g_free (destination);
   g_free (tmp_filename);
 
   g_signal_connect (download, "notify::status",
