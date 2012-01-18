@@ -690,7 +690,7 @@ create_desktop_and_metadata_files (EphyWebApplication *app,
   g_key_file_set_value (metadata_file, "Application", "Origin", priv->origin);
   if (priv->install_origin) g_key_file_set_value (metadata_file, "Application", "InstallOrigin", priv->install_origin);
 
-  g_key_file_set_value (desktop_file, "Desktop Entry", "StartupNotification", "true");
+  g_key_file_set_value (desktop_file, "Desktop Entry", "StartupNotify", "true");
   g_key_file_set_value (desktop_file, "Desktop Entry", "Terminal", "false");
   g_key_file_set_value (desktop_file, "Desktop Entry", "Type", "Application");
 

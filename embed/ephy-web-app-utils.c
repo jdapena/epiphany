@@ -90,226 +90,37 @@ get_origin (const char *url)
   return origin;
 }
 
-#define EPHY_WEB_APP_TOOLBAR "<?xml version=\"1.0\"?>" \
-                             "<toolbars version=\"1.1\">" \
-                             "  <toolbar name=\"DefaultToolbar\" hidden=\"true\" editable=\"false\">" \
-                             "    <toolitem name=\"NavigationBack\"/>" \
-                             "    <toolitem name=\"NavigationForward\"/>" \
-                             "    <toolitem name=\"ViewReload\"/>" \
-                             "    <toolitem name=\"ViewCancel\"/>" \
-                             "  </toolbar>" \
-                             "</toolbars>"
-
-#define EPHY_TOOLBARS_XML_FILE "epiphany-toolbars-3.xml"
-
-static char *
-create_desktop_and_metadata_files (const char *address,
-                                   const char *profile_dir,
-                                   const char *name,
-                                   const char *description,
-                                   GdkPixbuf *icon)
+static gboolean
+check_origin (JSContextRef context, const char *origin, JSValueRef *exception)
 {
-  GKeyFile *desktop_file = NULL;
-  GKeyFile *metadata_file = NULL;
-  char *exec_string = NULL;
-  char *origin;
-  char *launch_path;
-  SoupURI *uri = NULL, *host_uri = NULL;
-  char *data = NULL;
-  char *apps_path, *file_path = NULL;
-  char *wm_class;
-  GError *error = NULL;
+  JSStringRef get_href_string;
+  JSValueRef location_value;
+  gboolean result = FALSE;
 
-  g_return_val_if_fail (profile_dir, NULL);
+  get_href_string = JSStringCreateWithUTF8CString ("window.location.href");
+  location_value = JSEvaluateScript (context, get_href_string, NULL, NULL, 0, exception);
+  JSStringRelease (get_href_string);
 
-  wm_class = ephy_web_application_get_wm_class_from_app_title (name);
+  if (JSValueIsString (context, location_value)) {
+    JSStringRef location_string;
 
-  if (!wm_class)
-    goto out;
+    location_string = JSValueToStringCopy (context, location_value, exception);
+    if (location_string) {
+      char *location;
+      char *location_origin;
 
-  desktop_file = g_key_file_new ();
-  metadata_file = g_key_file_new ();
-  
-  g_key_file_set_value (desktop_file, "Desktop Entry", "Name", name);
-  g_key_file_set_value (metadata_file, "Application", "Name", name);
+      location = js_string_to_utf8 (location_string);
+      location_origin = get_origin (location);
 
-  g_key_file_set_value (metadata_file, "Application", "Description", description);
+      result = (g_strcmp0 (origin, location_origin) == 0);
 
-  exec_string = g_strdup_printf ("epiphany --application-mode --profile=\"%s\" %s",
-                                 profile_dir,
-                                 address);
-  g_key_file_set_value (desktop_file, "Desktop Entry", "Exec", exec_string);
-  g_free (exec_string);
-
-  uri = soup_uri_new (address);
-  launch_path = soup_uri_to_string (uri, TRUE);
-  g_key_file_set_value (metadata_file, "Application", "LaunchPath", launch_path);
-  g_free (launch_path);
-  host_uri = soup_uri_copy_host (uri);
-  origin = soup_uri_to_string (host_uri, FALSE);
-  g_key_file_set_value (metadata_file, "Application", "Origin", origin);
-  g_free (origin);
-  soup_uri_free (uri);
-  soup_uri_free (host_uri);
-
-  g_key_file_set_value (desktop_file, "Desktop Entry", "StartupNotify", "true");
-  g_key_file_set_value (desktop_file, "Desktop Entry", "Terminal", "false");
-  g_key_file_set_value (desktop_file, "Desktop Entry", "Type", "Application");
-
-  if (icon) {
-    GOutputStream *stream;
-    char *path;
-    GFile *image;
-
-    path = g_build_filename (profile_dir, EPHY_WEB_APPLICATION_APP_ICON, NULL);
-    image = g_file_new_for_path (path);
-
-    stream = (GOutputStream*)g_file_create (image, 0, NULL, NULL);
-    gdk_pixbuf_save_to_stream (icon, stream, "png", NULL, NULL, NULL);
-    g_key_file_set_value (desktop_file, "Desktop Entry", "Icon", path);
-    g_key_file_set_value (metadata_file, "Application", "Icon", path);
-
-    g_object_unref (stream);
-    g_object_unref (image);
-    g_free (path);
+      g_free (location_origin);
+      g_free (location);
+    }
+    JSStringRelease (location_string);
   }
 
-  g_key_file_set_value (desktop_file, "Desktop Entry", "StartupWMClass", wm_class);
-
-  data = g_key_file_to_data (metadata_file, NULL, NULL);
-  file_path = g_build_filename (profile_dir, EPHY_WEB_APPLICATION_METADATA_FILE, NULL);
-  g_key_file_free (metadata_file);
-
-  g_file_set_contents (file_path, data, -1, NULL);
-  g_free (file_path);
-  g_free (data);
-
-  data = g_key_file_to_data (desktop_file, NULL, NULL);
-  file_path = g_build_filename (profile_dir, EPHY_WEB_APPLICATION_DESKTOP_FILE, NULL);
-  g_key_file_free (desktop_file);
-
-  if (!g_file_set_contents (file_path, data, -1, NULL)) {
-    g_free (file_path);
-    file_path = NULL;
-  }
-
-  /* Create a symlink in XDG_DATA_DIR/applications for the Shell to
-   * pick up this application. */
-  apps_path = g_build_filename (g_get_user_data_dir (), "applications", NULL);
-  if (ephy_ensure_dir_exists (apps_path, &error)) {
-    char *filename, *link_path;
-    GFile *link;
-    filename = g_strconcat (wm_class, ".desktop", NULL);
-    link_path = g_build_filename (apps_path, filename, NULL);
-    g_free (filename);
-    link = g_file_new_for_path (link_path);
-    g_free (link_path);
-    g_file_make_symbolic_link (link, file_path, NULL, NULL);
-    g_object_unref (link);
-  } else {
-    g_warning ("Error creating application symlink: %s", error->message);
-    g_error_free (error);
-  }
-  g_free (wm_class);
-  g_free (apps_path);
-
-out:
-  g_free (wm_class);
-  g_free (data);
-  g_key_file_free (desktop_file);
-  g_key_file_free (metadata_file);
-
-  return file_path;
-}
-
-static void
-create_cookie_jar_for_domain (const char *address, const char *directory)
-{
-  SoupSession *session;
-  GSList *cookies, *p;
-  SoupCookieJar *current_jar, *new_jar;
-  char *domain, *filename;
-  SoupURI *uri;
-
-  /* Create the new cookie jar */
-  filename = g_build_filename (directory, "cookies.sqlite", NULL);
-  new_jar = (SoupCookieJar*)soup_cookie_jar_sqlite_new (filename, FALSE);
-  g_free (filename);
-
-  /* The app domain for the current view */
-  uri = soup_uri_new (address);
-  domain = uri->host;
-
-  /* The current cookies */
-  session = webkit_get_default_session ();
-  current_jar = (SoupCookieJar*)soup_session_get_feature (session, SOUP_TYPE_COOKIE_JAR);
-  cookies = soup_cookie_jar_all_cookies (current_jar);
-
-  for (p = cookies; p; p = p->next) {
-    SoupCookie *cookie = (SoupCookie*)p->data;
-
-    if (g_str_has_suffix (cookie->domain, domain))
-      soup_cookie_jar_add_cookie (new_jar, cookie);
-    else
-      soup_cookie_free (cookie);
-  }
-
-  soup_uri_free (uri);
-  g_slist_free (cookies);
-}
-
-/**
- * ephy_web_application_create:
- * @address: the address of the new web application
- * @name: the name for the new web application
- * @description: the description of the new web application
- * @icon: the icon for the new web application
- * 
- * Creates a new Web Application for @address.
- * 
- * Returns: (transfer-full): the path to the desktop file representing the new application
- **/
-char *
-ephy_web_application_create (const char *address, const char *name, const char *description, GdkPixbuf *icon)
-{
-  char *profile_dir = NULL;
-  char *toolbar_path = NULL;
-  char *desktop_file_path = NULL;
-
-  /* If there's already a WebApp profile for the contents of this
-   * view, do nothing. */
-  profile_dir = ephy_web_application_get_profile_dir_from_name (name);
-  if (g_file_test (profile_dir, G_FILE_TEST_IS_DIR))
-    goto out;
-
-  /* Create the profile directory, populate it. */
-  if (g_mkdir (profile_dir, 488) == -1) {
-    LOG ("Failed to create directory %s", profile_dir);
-    goto out;
-  }
-
-  /* Things we need in a WebApp's profile:
-     - Toolbar layout
-     - Our own cookies file, copying the relevant cookies for the
-       app's domain.
-  */
-  toolbar_path = g_build_filename (profile_dir, EPHY_TOOLBARS_XML_FILE, NULL);
-  if (!g_file_set_contents (toolbar_path, EPHY_WEB_APP_TOOLBAR, -1, NULL))
-    goto out;
-
-  create_cookie_jar_for_domain (address, profile_dir);
-
-  /* Create the deskop file. */
-  desktop_file_path = create_desktop_and_metadata_files (address, profile_dir, name, description, icon);
-
-out:
-  if (toolbar_path)
-    g_free (toolbar_path);
-
-  if (profile_dir)
-    g_free (profile_dir);
-
-  return desktop_file_path;
+  return result;
 }
 
 typedef struct {
@@ -3519,46 +3330,56 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   JSObjectSetProperty (context, chrome_obj, prop_name, chrome_app_obj, kJSPropertyAttributeNone, &exception);
   JSStringRelease (prop_name);
 
-  chrome_webstore_private_class = JSClassCreate (&chrome_webstore_private_class_def);
-  chrome_webstore_private_obj = JSObjectMake (context, chrome_webstore_private_class, context);
-  JSObjectSetPrivate (chrome_webstore_private_obj, context);
-  prop_name = JSStringCreateWithUTF8CString ("webstorePrivate");
-  JSObjectSetProperty (context, chrome_obj, prop_name, chrome_webstore_private_obj, kJSPropertyAttributeNone, &exception);
-  JSStringRelease (prop_name);
+  /* Currently we don't support permissions management for applications.
+   * The permissions needed for Chrome Webstore are webstorePrivate and management.
+   * First we'll only check origin for this. In the future extensions management
+   * should check app permissions.
+   */
 
-  chrome_management_class = JSClassCreate (&chrome_management_class_def);
-  chrome_management_obj = JSObjectMake (context, chrome_management_class, NULL);
-  prop_name = JSStringCreateWithUTF8CString ("management");
-  JSObjectSetProperty (context, chrome_obj, prop_name, chrome_management_obj, kJSPropertyAttributeNone, &exception);
-  JSStringRelease (prop_name);
+  if (check_origin (context, "https://chrome.google.com", &exception)) {
 
-  event_string = JSStringCreateWithUTF8CString
-    ("return {\n"
-     "  _listeners: new Array (),\n"
-     "  addListener: function (listener) {\n"
-     "    this._listeners.push (listener);\n"
-     "  },\n"
-     "  removeListener: function (listener) {\n"
-     "    var idx = this._listeners.indexOf(listener);\n"
-     "    if (idx != -1) this._listeners.splice(idx, 1);\n"
-     "  },\n"
-     "  dispatch: function () {\n"
-     "    for (var i in this._listeners) {\n"
-     "      this._listeners[i].apply(this, arguments);\n"
-     "    }\n"
-     "  }\n"
-     "}\n");
-  on_installed_function = JSObjectMakeFunction (context, NULL, 0, NULL, event_string, NULL, 1, &exception);
-  on_installed_value = JSObjectCallAsFunction (context, on_installed_function, NULL, 0, NULL, &exception);
-  prop_name = JSStringCreateWithUTF8CString ("onInstalled");
-  JSObjectSetProperty (context, chrome_management_obj, prop_name, on_installed_value, kJSPropertyAttributeNone, &exception);
-  JSStringRelease (prop_name);
+    /* only accessible from webstore */
+    chrome_webstore_private_class = JSClassCreate (&chrome_webstore_private_class_def);
+    chrome_webstore_private_obj = JSObjectMake (context, chrome_webstore_private_class, context);
+    JSObjectSetPrivate (chrome_webstore_private_obj, context);
+    prop_name = JSStringCreateWithUTF8CString ("webstorePrivate");
+    JSObjectSetProperty (context, chrome_obj, prop_name, chrome_webstore_private_obj, kJSPropertyAttributeNone, &exception);
+    JSStringRelease (prop_name);
 
-  on_uninstalled_function = JSObjectMakeFunction (context, NULL, 0, NULL, event_string, NULL, 1, &exception);
-  JSStringRelease (event_string);
-  on_uninstalled_value = JSObjectCallAsFunction (context, on_uninstalled_function, NULL, 0, NULL, &exception);
-  prop_name = JSStringCreateWithUTF8CString ("onUninstalled");
-  JSObjectSetProperty (context, chrome_management_obj, prop_name, on_uninstalled_value, kJSPropertyAttributeNone, &exception);
-  JSStringRelease (prop_name);
+    /* only accessible from webstore */
+    chrome_management_class = JSClassCreate (&chrome_management_class_def);
+    chrome_management_obj = JSObjectMake (context, chrome_management_class, NULL);
+    prop_name = JSStringCreateWithUTF8CString ("management");
+    JSObjectSetProperty (context, chrome_obj, prop_name, chrome_management_obj, kJSPropertyAttributeNone, &exception);
+    JSStringRelease (prop_name);
 
+    event_string = JSStringCreateWithUTF8CString
+      ("return {\n"
+       "  _listeners: new Array (),\n"
+       "  addListener: function (listener) {\n"
+       "    this._listeners.push (listener);\n"
+       "  },\n"
+       "  removeListener: function (listener) {\n"
+       "    var idx = this._listeners.indexOf(listener);\n"
+       "    if (idx != -1) this._listeners.splice(idx, 1);\n"
+       "  },\n"
+       "  dispatch: function () {\n"
+       "    for (var i in this._listeners) {\n"
+       "      this._listeners[i].apply(this, arguments);\n"
+       "    }\n"
+       "  }\n"
+       "}\n");
+    on_installed_function = JSObjectMakeFunction (context, NULL, 0, NULL, event_string, NULL, 1, &exception);
+    on_installed_value = JSObjectCallAsFunction (context, on_installed_function, NULL, 0, NULL, &exception);
+    prop_name = JSStringCreateWithUTF8CString ("onInstalled");
+    JSObjectSetProperty (context, chrome_management_obj, prop_name, on_installed_value, kJSPropertyAttributeNone, &exception);
+    JSStringRelease (prop_name);
+    
+    on_uninstalled_function = JSObjectMakeFunction (context, NULL, 0, NULL, event_string, NULL, 1, &exception);
+    JSStringRelease (event_string);
+    on_uninstalled_value = JSObjectCallAsFunction (context, on_uninstalled_function, NULL, 0, NULL, &exception);
+    prop_name = JSStringCreateWithUTF8CString ("onUninstalled");
+    JSObjectSetProperty (context, chrome_management_obj, prop_name, on_uninstalled_value, kJSPropertyAttributeNone, &exception);
+    JSStringRelease (prop_name);
+  }
 }
