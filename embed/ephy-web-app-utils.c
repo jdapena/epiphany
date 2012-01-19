@@ -340,7 +340,7 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
                                           EphyWebApplicationInstallCallback callback,
                                           gpointer userdata)
 {
-  GtkWidget *dialog, *hbox, *vbox, *image, *entry, *description_label, *content_area;
+  GtkWidget *dialog, *hbox, *vbox, *image, *entry, *content_area;
   EphyApplicationDialogData *data;
 
   /* Show dialog with icon, title. */
@@ -372,10 +372,6 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
   gtk_entry_set_activates_default (GTK_ENTRY (entry), TRUE);
   gtk_container_add (GTK_CONTAINER (vbox), entry);
 
-  description_label = gtk_label_new (ephy_web_application_get_description (app));
-  gtk_label_set_line_wrap (GTK_LABEL (description_label), TRUE);
-  gtk_container_add (GTK_CONTAINER (vbox), description_label);
-  
   if (ephy_web_application_get_author_url (app) != NULL) {
     GtkWidget *author_button;
     GtkWidget *author_button_label;
@@ -408,8 +404,6 @@ ephy_web_application_show_install_dialog (GtkWindow *window,
   gtk_entry_set_text (GTK_ENTRY (entry), ephy_web_application_get_name (app));
 
   gtk_widget_show_all (dialog);
-  if (ephy_web_application_get_description (app) == NULL)
-    gtk_widget_hide (description_label);
 
   gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_OK);
   g_signal_connect (dialog, "response",
