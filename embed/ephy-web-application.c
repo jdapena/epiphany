@@ -482,7 +482,7 @@ ephy_web_application_load (EphyWebApplication *app,
   gboolean is_ok = TRUE;
 
   if (priv->status != EPHY_WEB_APPLICATION_EMPTY) {
-    g_set_error (error, ERROR_QUARK, 0, "Tried to load a non empty application");
+    g_set_error (error, ERROR_QUARK, 0, _("Tried to load a non empty application."));
     is_ok = FALSE;
   }
 
@@ -590,14 +590,13 @@ ephy_web_application_delete (EphyWebApplication *app, GError **error)
   gboolean return_value = FALSE;
 
   if (ephy_web_application_get_status (app) != EPHY_WEB_APPLICATION_INSTALLED) {
-    g_set_error (error, ERROR_QUARK, 0, "Tried to delete a non installed application");
+    g_set_error (error, ERROR_QUARK, 0, _("Tried to delete a non installed application."));
     goto out;
   }
 
   profile = g_file_new_for_path (ephy_web_application_get_profile_dir (app));
   if (!ephy_file_delete_dir_recursively (profile, error))
     goto out;
-  g_print ("Deleted application profile.\n");
 
   wm_class = ephy_web_application_get_wm_class_from_app_title (ephy_web_application_get_name (app));
   desktop_file = g_strconcat (wm_class, ".desktop", NULL);
@@ -606,7 +605,6 @@ ephy_web_application_delete (EphyWebApplication *app, GError **error)
   launcher = g_file_new_for_path (desktop_path);
   if (!g_file_delete (launcher, NULL, error))
     goto out;
-  g_print ("Deleted application launcher.\n");
 
   ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
 
@@ -853,7 +851,7 @@ ephy_web_application_install (EphyWebApplication *app,
 
   /* Create the profile directory, populate it. */
   if (g_mkdir_with_parents (priv->profile_dir, 488) == -1) {
-    g_set_error (error, ERROR_QUARK, 0, "Failed to create directory %s", profile_dir);
+    g_set_error (error, ERROR_QUARK, 0, _("Failed to create directory %s."), profile_dir);
     goto out;
   }
 
