@@ -1945,6 +1945,7 @@ parse_crx_manifest (const char *manifest_data,
   char *_description = NULL;
   char *_update_url = NULL;
   char *_best_icon_path = NULL;
+  GError *_error = NULL;
 
   parser = json_parser_new ();
 
@@ -1954,17 +1955,17 @@ parse_crx_manifest (const char *manifest_data,
     root_node = json_parser_get_root (parser);
     _name = ephy_json_path_query_string ("$.name", root_node);
     if (_name == NULL)
-      g_set_error (error, ERROR_QUARK,
+      g_set_error (&_error, ERROR_QUARK,
                    EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, "No name on manifest");
 
-    if (*error == NULL) {
+    if (_error == NULL) {
       _web_url = ephy_json_path_query_string ("$.app.launch.web_url", root_node);
       if (_web_url == NULL)
-        g_set_error (error, ERROR_QUARK,
+        g_set_error (&_error, ERROR_QUARK,
                      EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, "No web url on manifest");
     }
       
-    if (*error == NULL) {
+    if (_error == NULL) {
       _description = ephy_json_path_query_string ("$.description", root_node);
       _update_url = ephy_json_path_query_string ("$.update_url", root_node);
       _best_icon_path = ephy_json_path_query_best_icon ("$.icons", root_node);
@@ -1998,7 +1999,12 @@ parse_crx_manifest (const char *manifest_data,
   else
     g_free (_best_icon_path);
 
-  return *error == NULL;
+  if (error)
+    *error = _error;
+  else if (_error)
+    g_error_free (_error);
+
+  return _error == NULL;
 }
 
 static void
