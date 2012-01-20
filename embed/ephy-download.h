@@ -63,9 +63,10 @@ struct _EphyDownloadClass
                        gint error_code,
                        gint error_detail,
                        char *reason);
-  void (* app_manifest_available) (EphyDownload *download,
-                                   char *origin,
-                                   char *destination_path);
+  void (* webapp_available) (EphyDownload *download,
+                             char *content_type,
+                             char *origin,
+                             char *destination_path);
 };
 
 typedef enum

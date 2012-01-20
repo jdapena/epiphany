@@ -59,6 +59,8 @@ void     ephy_web_application_install_manifest (GtkWindow *window,
                                                 const char *install_origin,
                                                 EphyWebApplicationInstallManifestCallback callback,
                                                 gpointer userdata);
+void     ephy_web_application_install_crx_extension (const char *origin,
+                                                     const char *crx_path);
 
 void     ephy_web_application_setup_mozilla_api (JSGlobalContextRef context);
 void     ephy_web_application_setup_chrome_api  (JSGlobalContextRef context);

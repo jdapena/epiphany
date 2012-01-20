@@ -1804,8 +1804,10 @@ typedef struct {
   char *manifest_data;
   char *update_url;
   char *icon_url;
+  char *best_icon_path;
   GdkPixbuf *icon_pixbuf;
   char *crx_file_path;
+  char *crx_contents_path;
   GError *error;
   JSGlobalContextRef context;
   JSObjectRef this_object;
@@ -1882,15 +1884,18 @@ finish_chrome_webstore_install_data (ChromeWebstoreInstallData *install_data)
     JSValueUnprotect (install_data->context, install_data->callback_function);
   if (install_data->this_object)
     JSValueUnprotect (install_data->context, install_data->this_object);
-  JSGlobalContextRelease (install_data->context);
+  if (install_data->context)
+    JSGlobalContextRelease (install_data->context);
 
   g_object_unref (install_data->app);
   g_free (install_data->crx_file_path);
+  g_free (install_data->crx_contents_path);
   g_free (install_data->manifest_data);
   g_free (install_data->update_url);
   g_free (install_data->icon_url);
   g_free (install_data->id);
   g_free (install_data->default_locale);
+  g_free (install_data->best_icon_path);
   if (install_data->icon_pixbuf)
     g_object_unref (install_data->icon_pixbuf);
   if (install_data->error) {
@@ -2121,6 +2126,39 @@ chrome_webstore_install_cb (gint response,
 
       g_free (manifest_install_path);
 
+      if (result) {
+        char *crx_path;
+        GFile *tmp_crx_file, *crx_file;
+
+        tmp_crx_file = g_file_new_for_path (install_data->crx_file_path);
+        crx_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX);
+        crx_file = g_file_new_for_path (crx_path);
+        g_free (crx_path);
+
+        result = g_file_copy (tmp_crx_file, crx_file,
+                              G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
+                              NULL, NULL, NULL, 
+                              &(install_data->error));
+        g_object_unref (tmp_crx_file);
+        g_object_unref (crx_file);
+      }
+
+      if (result) {
+        char *crx_contents_path;
+        GFile *tmp_crx_contents_file, *crx_contents_file;
+
+        tmp_crx_contents_file = g_file_new_for_path (install_data->crx_contents_path);
+        crx_contents_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
+        crx_contents_file = g_file_new_for_path (crx_contents_path);
+        g_free (crx_contents_path);
+
+        result = g_file_move (tmp_crx_contents_file, crx_contents_file,
+                              G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
+                              NULL, NULL, NULL, &(install_data->error));
+        g_object_unref (crx_contents_file);
+        g_object_unref (tmp_crx_contents_file);
+      }
+
     }
 
   } else {
@@ -2192,6 +2230,149 @@ crx_get_translation (const char *path, const char *key, const char * default_loc
   return result;
 }
 
+static gboolean
+parse_crx_manifest (const char *manifest_data,
+                    char **name,
+                    char **web_url,
+                    char **description,
+                    char **update_url,
+                    char **best_icon_path,
+                    GError **error)
+{
+  JsonParser *parser;
+  char *_name = NULL;
+  char *_web_url = NULL;
+  char *_description = NULL;
+  char *_update_url = NULL;
+  char *_best_icon_path = NULL;
+
+  parser = json_parser_new ();
+
+  if (json_parser_load_from_data (parser, strip_utf8_bom_mark (manifest_data), -1, error)) {
+    JsonNode *root_node;
+    JsonNode *node;
+
+    root_node = json_parser_get_root (parser);
+    node = json_path_query ("$.name", root_node, NULL);
+    if (node) {
+      if (JSON_NODE_HOLDS_ARRAY (node)) {
+        JsonArray *array = json_node_get_array (node);
+        if (json_array_get_length (array) > 0) {
+          _name = g_strdup (json_array_get_string_element (array, 0));
+          if (_name == NULL)
+            g_set_error (error, ERROR_QUARK,
+                         EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, "No name on manifest");
+        }
+      }
+      json_node_free (node);
+    }
+
+    if (*error == NULL) {
+      node = json_path_query ("$.app.launch.web_url", root_node, NULL);
+      if (node) {
+        if (JSON_NODE_HOLDS_ARRAY (node)) {
+          JsonArray *array = json_node_get_array (node);
+          if (json_array_get_length (array) > 0) {
+            _web_url = g_strdup (json_array_get_string_element (array, 0));
+            if (_web_url == NULL)
+              g_set_error (error, ERROR_QUARK,
+                           EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, "No web url on manifest");
+          }
+        }
+        json_node_free (node);
+      }
+    }
+
+    if (*error == NULL) {
+      node = json_path_query ("$.description", root_node, NULL);
+      if (node) {
+        if (JSON_NODE_HOLDS_ARRAY (node)) {
+          JsonArray *array = json_node_get_array (node);
+          if (json_array_get_length (array) > 0) {
+            _description = g_strdup (json_array_get_string_element (array, 0));
+          }
+        }
+        json_node_free (node);
+      }
+
+      node = json_path_query ("$.update_url", root_node, NULL);
+      if (node) {
+        if (JSON_NODE_HOLDS_ARRAY (node)) {
+          JsonArray *array = json_node_get_array (node);
+          if (json_array_get_length (array) > 0) {
+            _update_url = g_strdup (json_array_get_string_element (array, 0));
+          }
+        }
+        json_node_free (node);
+      }
+
+
+      node = json_path_query ("$.icons", root_node, NULL);
+      if (node) {
+        if (JSON_NODE_HOLDS_ARRAY (node)) {
+          JsonArray *array;
+          
+          array = json_node_get_array (node);
+          if (json_array_get_length (array) > 0) {
+            JsonObject *object;
+
+            object = json_array_get_object_element (array, 0);
+            if (object) {
+              GList *members, *node, *best_node;
+              unsigned long int best_size;
+
+              best_size = 0;
+              best_node = NULL;
+              members = json_object_get_members (object);
+              for (node = members; node != NULL; node = g_list_next (node)) {
+                unsigned long int node_size;
+                node_size = strtoul(node->data, NULL, 10);
+                if (node_size != ULONG_MAX && node_size >= best_size) {
+                  best_size = node_size;
+                  best_node = node;
+                }
+              }
+              if (best_node) {
+                _best_icon_path = g_strdup (json_object_get_string_member (object, (char *) best_node->data));
+              }
+              g_list_free (members);
+            }
+          }
+        }
+        json_node_free (node);
+      }
+
+    }
+  }
+
+  if (name)
+    *name = _name;
+  else
+    g_free (_name);
+
+  if (description)
+    *description = _description;
+  else
+    g_free (_description);
+  
+  if (web_url)
+    *web_url = _web_url;
+  else
+    g_free (_web_url);
+
+  if (update_url)
+    *update_url = _update_url;
+  else
+    g_free (_update_url);
+
+  if (best_icon_path)
+    *best_icon_path = _best_icon_path;
+  else
+    g_free (_best_icon_path);
+
+  return *error == NULL;
+}
+
 static void
 on_crx_extract (GObject *object,
                 GAsyncResult *result,
@@ -2199,38 +2380,83 @@ on_crx_extract (GObject *object,
 {
   GError *error = NULL;
   ChromeWebstoreInstallData *install_data = (ChromeWebstoreInstallData *) userdata;
+  gboolean is_ok = TRUE;
 
   if (crx_extract_finish (result, &error)) {
     char *key_id;
 
-    char *crx_contents_path;
+    if (install_data->manifest_data == NULL) {
+      /* We're opening directly the CRX so we don't have the manifest.
+       * Load it and parse */
+      char *manifest_path;
+      GFile *manifest_file;
 
-    crx_contents_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
+      manifest_path = g_build_filename (install_data->crx_contents_path, "manifest.json", NULL);
+      manifest_file = g_file_new_for_path (manifest_path);
 
-    key_id = crx_extract_msg_id (ephy_web_application_get_name (EPHY_WEB_APPLICATION (install_data->app)));
-    if (key_id != NULL) {
-      char *name = crx_get_translation (crx_contents_path, key_id, install_data->default_locale);
-      ephy_web_application_set_name (install_data->app, name);
-      g_free (name);
-      g_free (key_id);
+      is_ok = g_file_load_contents (manifest_file, NULL, &(install_data->manifest_data), NULL, NULL, &error);
+      g_object_unref (manifest_file);
+      g_free (manifest_path);
+
+      if (is_ok) {
+        char *name = NULL;
+        char *description = NULL;
+        char *web_url = NULL;
+        char *best_icon_path = NULL;
+        is_ok = parse_crx_manifest (install_data->manifest_data, &name, &web_url, &description, NULL, &best_icon_path, &error);
+        if (is_ok) {
+          ephy_web_application_set_name (install_data->app, name);
+          ephy_web_application_set_description (install_data->app, description);
+          ephy_web_application_set_full_uri (install_data->app, web_url);
+          install_data->best_icon_path = best_icon_path;
+        }
+        g_free (name);
+        g_free (description);
+        g_free (web_url);
+      }
     }
 
-    key_id = crx_extract_msg_id (ephy_web_application_get_description (EPHY_WEB_APPLICATION (install_data->app)));
-    if (key_id != NULL) {
-      char *description = crx_get_translation (crx_contents_path, key_id, install_data->default_locale);
-      ephy_web_application_set_description (install_data->app, description);
-      g_free (description);
-      g_free (key_id);
+    if (is_ok && install_data->best_icon_path && install_data->icon_url == NULL && install_data->icon_pixbuf == NULL) {
+      char *best_icon_full_path;
+
+      best_icon_full_path = g_build_filename (install_data->crx_contents_path,
+                                              install_data->best_icon_path,
+                                              NULL);
+      install_data->icon_pixbuf = gdk_pixbuf_new_from_file (best_icon_full_path, NULL);
+      g_free (best_icon_full_path);
     }
 
-    g_free (crx_contents_path);
-    ephy_web_application_show_install_dialog
-      (NULL,
-       _("Install Chrome web store application"), _("Install"),
-       install_data->app, install_data->icon_url, install_data->icon_pixbuf,
-       chrome_webstore_install_cb, install_data);
-  } else {
-    g_propagate_error (&(install_data->error), error);
+    if (is_ok) {
+
+      key_id = crx_extract_msg_id (ephy_web_application_get_name (EPHY_WEB_APPLICATION (install_data->app)));
+      if (key_id != NULL) {
+        char *name = crx_get_translation (install_data->crx_contents_path, key_id, install_data->default_locale);
+        ephy_web_application_set_name (install_data->app, name);
+        g_free (name);
+        g_free (key_id);
+      }
+
+      key_id = crx_extract_msg_id (ephy_web_application_get_description (EPHY_WEB_APPLICATION (install_data->app)));
+      if (key_id != NULL) {
+        char *description = crx_get_translation (install_data->crx_contents_path, key_id, install_data->default_locale);
+        ephy_web_application_set_description (install_data->app, description);
+        g_free (description);
+        g_free (key_id);
+      }
+
+      ephy_web_application_set_status (install_data->app, EPHY_WEB_APPLICATION_TEMPORARY);
+
+      ephy_web_application_show_install_dialog
+        (NULL,
+         _("Install Chrome web store application"), _("Install"),
+         install_data->app, install_data->icon_url, install_data->icon_pixbuf,
+         chrome_webstore_install_cb, install_data);
+    }
+  }
+
+  if (!is_ok) {
+    if (error)
+      g_propagate_error (&(install_data->error), error);
     finish_chrome_webstore_install_data (install_data);
   }
 }
@@ -2245,29 +2471,16 @@ crx_download_status_changed_cb (WebKitDownload *download,
   switch (status) {
   case WEBKIT_DOWNLOAD_STATUS_FINISHED:
     {
-      char *crx_path, *crx_contents_path;
-      GFile *origin_crx, *destination_crx;
-
+      char *crx_contents_dirname;
       install_data->crx_file_path = g_filename_from_uri (webkit_download_get_destination_uri (download), NULL, NULL);
+      crx_contents_dirname = g_strdup ("ephy-download-XXXXXX");
+      g_mkdtemp (crx_contents_dirname);
+      install_data->crx_contents_path = g_build_filename (ephy_file_tmp_dir (), crx_contents_dirname, NULL);
+      g_free (crx_contents_dirname);
 
-      origin_crx = g_file_new_for_path (install_data->crx_file_path);
-      crx_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX);
-      crx_contents_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
-      destination_crx = g_file_new_for_path (crx_path);
-      crx_contents_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
-
-      g_file_copy (origin_crx, destination_crx, 
-                   G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
-                   NULL, NULL, NULL, 
-                   NULL);
-
-      crx_extract (install_data->crx_file_path, crx_contents_path,
+      crx_extract (install_data->crx_file_path, install_data->crx_contents_path,
                    G_PRIORITY_DEFAULT_IDLE, NULL,
                    on_crx_extract, install_data);
-
-      g_object_unref (origin_crx);
-      g_object_unref (destination_crx);
-      g_free (crx_path);
 
       break;
     }
@@ -2283,6 +2496,7 @@ crx_download_status_changed_cb (WebKitDownload *download,
     break;
   }
 }
+
 static gboolean
 chrome_retrieve_crx (char *crx_url, 
                      ChromeWebstoreInstallData *install_data)
@@ -2312,6 +2526,29 @@ chrome_retrieve_crx (char *crx_url,
 
   return TRUE;
 }
+
+void
+ephy_web_application_install_crx_extension (const char *origin,
+                                            const char *crx_path)
+{
+  ChromeWebstoreInstallData *install_data;
+  char * crx_contents_dirname;
+
+  install_data = g_slice_new0 (ChromeWebstoreInstallData);
+  install_data->crx_file_path = g_filename_from_uri (crx_path, NULL, NULL);
+  crx_contents_dirname = g_strdup ("ephy-download-XXXXXX");
+  g_mkdtemp (crx_contents_dirname);
+  install_data->crx_contents_path = g_build_filename (ephy_file_tmp_dir (), crx_contents_dirname, NULL);
+  g_free (crx_contents_dirname);
+  install_data->app = ephy_web_application_new ();
+  ephy_web_application_set_install_origin (install_data->app, origin);
+  crx_extract (install_data->crx_file_path,
+               install_data->crx_contents_path,
+               G_PRIORITY_DEFAULT_IDLE,
+               NULL,
+               on_crx_extract, install_data);
+}
+
 
 static void
 crx_update_xml_download_status_changed_cb (WebKitDownload *download,
@@ -2445,6 +2682,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   char *localized_name = NULL;
   char *web_url = NULL;
   char *update_url = NULL;
+  char *best_icon_path = NULL;
   JSObjectRef callback_function = NULL;
 
   if (argumentCount > 2 || 
@@ -2478,63 +2716,11 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
 
     manifest_string = JSValueToStringCopy (context, prop_value, exception);
     if (*exception == NULL) {
-      JsonParser *parser;
       GError *error = NULL;
 
       manifest = js_string_to_utf8 (manifest_string);
-      parser = json_parser_new ();
 
-
-      if (json_parser_load_from_data (parser, strip_utf8_bom_mark (manifest), -1, &error)) {
-        JsonNode *root_node;
-        JsonNode *node;
-
-        root_node = json_parser_get_root (parser);
-        node = json_path_query ("$.name", root_node, NULL);
-        if (node) {
-          if (JSON_NODE_HOLDS_ARRAY (node)) {
-            JsonArray *array = json_node_get_array (node);
-            if (json_array_get_length (array) > 0) {
-              name = g_strdup (json_array_get_string_element (array, 0));
-            }
-          }
-          json_node_free (node);
-        }
-
-        node = json_path_query ("$.description", root_node, NULL);
-        if (node) {
-          if (JSON_NODE_HOLDS_ARRAY (node)) {
-            JsonArray *array = json_node_get_array (node);
-            if (json_array_get_length (array) > 0) {
-              description = g_strdup (json_array_get_string_element (array, 0));
-            }
-          }
-          json_node_free (node);
-        }
-
-        node = json_path_query ("$.app.launch.web_url", root_node, NULL);
-        if (node) {
-          if (JSON_NODE_HOLDS_ARRAY (node)) {
-            JsonArray *array = json_node_get_array (node);
-            if (json_array_get_length (array) > 0) {
-              web_url = g_strdup (json_array_get_string_element (array, 0));
-            }
-          }
-          json_node_free (node);
-        }
-
-        node = json_path_query ("$.update_url", root_node, NULL);
-        if (node) {
-          if (JSON_NODE_HOLDS_ARRAY (node)) {
-            JsonArray *array = json_node_get_array (node);
-            if (json_array_get_length (array) > 0) {
-              update_url = g_strdup (json_array_get_string_element (array, 0));
-            }
-          }
-          json_node_free (node);
-        }
-
-      } else if (error != NULL) {
+      if (!parse_crx_manifest (manifest, &name, &web_url, &description, &update_url, &best_icon_path, &error) && error != NULL) {
         g_warning ("%s : failed parsing manifest json: %s", __FUNCTION__, error->message);
       }
     }
@@ -2640,6 +2826,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     install_data->icon_pixbuf = icon_pixbuf?g_object_ref (icon_pixbuf):NULL;
     install_data->context = JSGlobalContextCreateInGroup (JSContextGetGroup (context), NULL);
     install_data->on_installed = NULL;
+    install_data->best_icon_path = g_strdup (best_icon_path);
     {
       JSStringRef script_ref;
       JSValueRef on_installed_value;
@@ -2707,6 +2894,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   g_free (icon_data);
   g_free (localized_name);
   g_free (web_url);
+  g_free (best_icon_path);
   if (*exception) return JSValueMakeNull (context);
   return JSValueMakeUndefined (context);
 }

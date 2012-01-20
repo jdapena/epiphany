@@ -478,10 +478,11 @@ ephy_embed_auto_download_url (EphyEmbed *embed, const char *url)
 }
 
 static void
-app_manifest_available_cb (EphyDownload *download,
-                           char *origin,
-                           char *destination_path,
-                           EphyEmbed *embed)
+webapp_available_cb (EphyDownload *download,
+                     char *mime_type,
+                     char *origin,
+                     char *destination_path,
+                     EphyEmbed *embed)
 {
   GtkWidget *toplevel;
   GtkWindow *window;
@@ -494,7 +495,11 @@ app_manifest_available_cb (EphyDownload *download,
     window = NULL;
   }
 
-  ephy_web_application_install_manifest (window, origin, destination_path, NULL, NULL, NULL, NULL);
+  if (g_strcmp0 (mime_type, "application/x-web-app-manifest+json") == 0) {
+    ephy_web_application_install_manifest (window, origin, destination_path, NULL, NULL, NULL, NULL);
+  } else if (g_strcmp0 (mime_type, "application/x-chrome-extension") == 0) {
+    ephy_web_application_install_crx_extension (origin, destination_path);
+  }
   
 }
 
@@ -518,8 +523,8 @@ download_requested_cb (WebKitWebView *web_view,
   ephy_download_set_window (ed, window);
   ephy_download_set_auto_destination (ed);
 
-  g_signal_connect (G_OBJECT (ed), "app-manifest-available",
-                    G_CALLBACK (app_manifest_available_cb), embed);
+  g_signal_connect (G_OBJECT (ed), "webapp-available",
+                    G_CALLBACK (webapp_available_cb), embed);
 
   return TRUE;
 }

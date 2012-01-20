@@ -864,19 +864,20 @@ ephy_download_class_init (EphyDownloadClass *klass)
                 G_TYPE_NONE,
                 0);
   /**
-   * EphyDownload::app-manifest-available:
+   * EphyDownload::webapp-available:
    *
-   * The ::app-manifest-available is emitted when a manifest
-   * is ready to be installed.
+   * The ::webapp-available is emitted when a web app package
+   * or manifest is ready to be installed.
    **/
-  g_signal_new ("app-manifest-available",
+  g_signal_new ("webapp-available",
                 G_OBJECT_CLASS_TYPE (object_class),
                 G_SIGNAL_RUN_LAST,
-                G_STRUCT_OFFSET (EphyDownloadClass, app_manifest_available),
+                G_STRUCT_OFFSET (EphyDownloadClass, webapp_available),
                 NULL, NULL,
                 g_cclosure_marshal_generic,
                 G_TYPE_NONE,
-                2,
+                3,
+                G_TYPE_STRING,
                 G_TYPE_STRING,
                 G_TYPE_STRING);
 }
@@ -926,8 +927,10 @@ download_status_changed_cb (GObject *object,
     if (message) {
       const char *content_type = soup_message_headers_get_content_type (message->response_headers, NULL);
 
-      if (content_type && !strcmp (content_type, "application/x-web-app-manifest+json")) {
-        // We need the host for processing a mozilla manifest
+      if (content_type && 
+          ((!strcmp (content_type, "application/x-web-app-manifest+json")) ||
+           (!strcmp (content_type, "application/x-chrome-extension")))) {
+        // We need the host for knowing the install origin
         SoupURI *uri, *origin_uri;
         char *origin;
 
@@ -936,7 +939,7 @@ download_status_changed_cb (GObject *object,
 
         origin = soup_uri_to_string (origin_uri, FALSE);
 
-        g_signal_emit_by_name (download, "app-manifest-available", origin, priv->destination);
+        g_signal_emit_by_name (download, "webapp-available", content_type, origin, priv->destination);
 
         soup_uri_free (uri);
         soup_uri_free (origin_uri);
