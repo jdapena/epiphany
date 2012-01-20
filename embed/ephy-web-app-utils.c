@@ -56,31 +56,19 @@ static JSValueRef chrome_app_object_from_application (JSContextRef context,
 static gboolean
 check_origin (JSContextRef context, const char *origin, JSValueRef *exception)
 {
-  JSStringRef get_href_string;
-  JSValueRef location_value;
   gboolean result = FALSE;
+  char *location;
 
-  get_href_string = JSStringCreateWithUTF8CString ("window.location.href");
-  location_value = JSEvaluateScript (context, get_href_string, NULL, NULL, 0, exception);
-  JSStringRelease (get_href_string);
+  location = ephy_js_context_get_location (context, exception);
+  if (location) {
 
-  if (JSValueIsString (context, location_value)) {
-    JSStringRef location_string;
-
-    location_string = JSValueToStringCopy (context, location_value, exception);
-    if (location_string) {
-      char *location;
       char *location_origin;
 
-      location = ephy_js_string_to_utf8 (location_string);
       location_origin = ephy_embed_utils_url_get_origin (location);
-
       result = (g_strcmp0 (origin, location_origin) == 0);
 
       g_free (location_origin);
       g_free (location);
-    }
-    JSStringRelease (location_string);
   }
 
   return result;
@@ -748,11 +736,7 @@ mozapps_am_installed (JSContextRef context,
     return JSValueMakeNull (context);
   } else {
     JSObjectRef object_ref;
-    JSStringRef script_ref;
-    JSValueRef location_value;
-    JSStringRef location_str;
     char *location;
-    SoupURI *uri, *host_uri;
     char *origin;
     JSValueRef callback_parameter = NULL;
     JSValueRef callback_arguments[1];
@@ -763,26 +747,14 @@ mozapps_am_installed (JSContextRef context,
       return JSValueMakeNull (context);
     }
 
-    script_ref = JSStringCreateWithUTF8CString ("window.location.href");
-    location_value = JSEvaluateScript (context, script_ref, NULL, NULL, 0, exception);
-    JSStringRelease (script_ref);
-
-    if (!JSValueIsString (context, location_value) || *exception) {
+    location = ephy_js_context_get_location (context, exception);
+    if (location == NULL || *exception != NULL) {
+      g_free (location);
       *exception = JSValueMakeNumber (context, 1);
       goto amInstalledFinish;
     }
-    location_str = JSValueToStringCopy (context, location_value, exception);
-    if (*exception != NULL) {
-      goto amInstalledFinish;
-    }
-    location = ephy_js_string_to_utf8 (location_str);
 
-    uri = soup_uri_new (location);
-    host_uri = soup_uri_copy_host (uri);
-    origin = soup_uri_to_string (host_uri, FALSE);
-
-    soup_uri_free (host_uri);
-    soup_uri_free (uri);
+    origin = ephy_embed_utils_url_get_origin (location);
     g_free (location);
 
     if (origin == NULL) {
@@ -862,11 +834,7 @@ mozapps_get_installed_by (JSContextRef context,
     return JSValueMakeNull(context);
   } else {
     JSObjectRef object_ref;
-    JSStringRef script_ref;
-    JSValueRef location_value;
-    JSStringRef location_str;
     char *location;
-    SoupURI *uri, *host_uri;
     char *origin;
     JSValueRef callback_parameter = NULL;
     JSValueRef callback_arguments[1];
@@ -877,25 +845,13 @@ mozapps_get_installed_by (JSContextRef context,
       return JSValueMakeNull(context);
     }
 
-    script_ref = JSStringCreateWithUTF8CString ("window.location.href");
-    location_value = JSEvaluateScript (context, script_ref, NULL, NULL, 0, exception);
-    JSStringRelease (script_ref);
-
-    if (!JSValueIsString (context, location_value)) {
+    location = ephy_js_context_get_location (context, exception);
+    if (location == NULL) {
       *exception = JSValueMakeNumber (context, 1);
       goto getInstalledByFinish;
     }
 
-    location_str = JSValueToStringCopy (context, location_value, NULL);
-    location = ephy_js_string_to_utf8 (location_str);
-    JSStringRelease (location_str);
-
-    uri = soup_uri_new (location);
-    host_uri = soup_uri_copy_host (uri);
-    origin = soup_uri_to_string (host_uri, FALSE);
-
-    soup_uri_free (host_uri);
-    soup_uri_free (uri);
+    origin = ephy_embed_utils_url_get_origin (location);
     g_free (location);
 
     if (origin == NULL) {
@@ -1154,25 +1110,15 @@ mozapps_install (JSContextRef context,
   }
 
   {
-    JSStringRef script_ref;
-    JSValueRef location_value;
+    char *location;
 
-    script_ref = JSStringCreateWithUTF8CString ("window.location.href");
-    location_value = JSEvaluateScript (context, script_ref, NULL, NULL, 0, exception);
-    JSStringRelease (script_ref);
-
-    if ((*exception == NULL) && JSValueIsString (context, location_value)) {
-      JSStringRef location_str;
-      char *location;
-      location_str = JSValueToStringCopy (context, location_value, NULL);
-      location = ephy_js_string_to_utf8 (location_str);
-      JSStringRelease (location_str);
-
+    location = ephy_js_context_get_location (context, exception);
+    if (location && *exception == NULL) {
       install_manifest_data->install_origin = ephy_embed_utils_url_get_origin (location);
-      g_free (location);
     } else {
       install_manifest_data->install_origin = NULL;
     }
+    g_free (location);
   }
 
   if (*exception != NULL) {
@@ -1577,8 +1523,6 @@ chrome_app_install (JSContextRef context,
   JSObjectRef fetch_href;
   JSValueRef href_value;
   JSStringRef href_string;
-  JSStringRef fetch_window_href_string;
-  JSValueRef window_href_value;
   char *window_href = NULL;
   char *href = NULL;
 
@@ -1615,22 +1559,11 @@ chrome_app_install (JSContextRef context,
   href = ephy_js_string_to_utf8 (href_string);
   JSStringRelease (href_string);
 
-  fetch_window_href_string = JSStringCreateWithUTF8CString ("window.location.href");
-  window_href_value = JSEvaluateScript (context, fetch_window_href_string, NULL, NULL, 0, exception);
-  JSStringRelease (fetch_window_href_string);
-
-  if (!JSValueIsString (context, window_href_value) || *exception) {
+  window_href = ephy_js_context_get_location (context, exception);
+  if (*exception == NULL && window_href == NULL) {
     *exception = JSValueMakeNumber (context, 1);
   }
-  if (*exception == NULL) {
-    JSStringRef window_href_string;
-    window_href_string = JSValueToStringCopy (context, window_href_value, exception);
 
-    if (*exception == NULL) {
-      window_href = ephy_js_string_to_utf8 (window_href_string);
-      JSStringRelease (window_href_string);
-    }
-  }
   g_warning ("HREF's window %s and manifest %s", window_href, href);
 
   if (window_href && href) {

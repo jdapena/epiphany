@@ -38,3 +38,27 @@ ephy_js_string_to_utf8 (JSStringRef js_string)
   JSStringGetUTF8CString (js_string, result, length);
   return result;
 }
+
+char *
+ephy_js_context_get_location (JSContextRef context, JSValueRef *exception)
+{
+  JSStringRef location_script;
+  JSValueRef href_value;
+  char *result = NULL;
+  
+  location_script = JSStringCreateWithUTF8CString ("window.location.href");
+  href_value = JSEvaluateScript (context, location_script, NULL, NULL, 0, exception);
+  JSStringRelease (location_script);
+
+  if (JSValueIsString (context, href_value)) {
+    JSStringRef href_string;
+
+    href_string = JSValueToStringCopy (context, href_value, exception);
+    if (href_string) {
+      result = ephy_js_string_to_utf8 (href_string);
+      JSStringRelease (href_string);
+    }
+  }
+
+  return result;
+}
