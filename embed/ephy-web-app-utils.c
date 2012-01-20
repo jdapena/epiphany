@@ -53,26 +53,6 @@ static JSValueRef chrome_app_object_from_application (JSContextRef context,
                                                       JSValueRef *exception);
 
 
-static gboolean
-check_origin (JSContextRef context, const char *origin, JSValueRef *exception)
-{
-  gboolean result = FALSE;
-  char *location;
-
-  location = ephy_js_context_get_location (context, exception);
-  if (location) {
-
-      char *location_origin;
-
-      location_origin = ephy_embed_utils_url_get_origin (location);
-      result = (g_strcmp0 (origin, location_origin) == 0);
-
-      g_free (location_origin);
-      g_free (location);
-  }
-
-  return result;
-}
 
 typedef struct {
   EphyWebApplication *app;
@@ -3392,7 +3372,7 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
    * should check app permissions.
    */
 
-  if (check_origin (context, "https://chrome.google.com", &exception)) {
+  if (ephy_js_context_in_origin (context, "https://chrome.google.com", &exception)) {
 
     /* only accessible from webstore */
     chrome_webstore_private_class = JSClassCreate (&chrome_webstore_private_class_def);

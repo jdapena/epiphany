@@ -37,6 +37,9 @@ G_BEGIN_DECLS
 char *        ephy_js_string_to_utf8               (JSStringRef js_string);
 char *        ephy_js_context_get_location         (JSContextRef context,
 						    JSValueRef *exception);
+gboolean      ephy_js_context_in_origin            (JSContextRef context,
+                                                    const char *origin,
+                                                    JSValueRef *exception);
 
 G_END_DECLS
 

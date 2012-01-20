@@ -25,6 +25,8 @@
 #include "config.h"
 #include "ephy-js-utils.h"
 
+#include "ephy-embed-utils.h"
+
 char *
 ephy_js_string_to_utf8 (JSStringRef js_string)
 {
@@ -58,6 +60,29 @@ ephy_js_context_get_location (JSContextRef context, JSValueRef *exception)
       result = ephy_js_string_to_utf8 (href_string);
       JSStringRelease (href_string);
     }
+  }
+
+  return result;
+}
+
+gboolean
+ephy_js_context_in_origin (JSContextRef context,
+                           const char *origin,
+                           JSValueRef *exception)
+{
+  gboolean result = FALSE;
+  char *location;
+
+  location = ephy_js_context_get_location (context, exception);
+  if (location) {
+    
+    char *location_origin;
+
+    location_origin = ephy_embed_utils_url_get_origin (location);
+    result = (g_strcmp0 (origin, location_origin) == 0);
+
+    g_free (location_origin);
+    g_free (location);
   }
 
   return result;
