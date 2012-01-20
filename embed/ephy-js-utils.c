@@ -91,6 +91,28 @@ ephy_js_context_in_origin (JSContextRef context,
 }
 
 JSValueRef
+ephy_js_context_eval_as_function (JSContextRef context,
+                                  const char *script,
+                                  JSValueRef *exception)
+{
+  JSStringRef script_string;
+  JSObjectRef function_obj;
+  JSValueRef result;
+
+  result = JSValueMakeNull (context);
+
+  script_string = JSStringCreateWithUTF8CString (script);
+  function_obj = JSObjectMakeFunction (context, NULL, 0, NULL,
+                                       script_string, NULL, 1, exception);
+  if (*exception == NULL) {
+    result = JSObjectCallAsFunction (context, function_obj, NULL, 0, NULL, exception);
+  }
+  JSStringRelease (script_string);
+
+  return result;
+}
+
+JSValueRef
 ephy_js_object_get_property (JSContextRef context,
                              JSObjectRef obj,
                              const char *name,

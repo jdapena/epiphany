@@ -44,6 +44,9 @@ char *        ephy_js_context_get_location             (JSContextRef context,
 gboolean      ephy_js_context_in_origin                (JSContextRef context,
                                                         const char *origin,
                                                         JSValueRef *exception);
+JSValueRef    ephy_js_context_eval_as_function         (JSContextRef context,
+                                                        const char *script,
+                                                        JSValueRef *exception);
 
 /* JSObjectRef helpers */
 

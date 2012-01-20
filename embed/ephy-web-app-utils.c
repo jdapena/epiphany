@@ -1365,8 +1365,6 @@ chrome_app_install (JSContextRef context,
                     const JSValueRef arguments[],
                     JSValueRef *exception)
 {
-  JSStringRef fetch_href_string;
-  JSObjectRef fetch_href;
   JSValueRef href_value;
   JSStringRef href_string;
   char *window_href = NULL;
@@ -1377,8 +1375,9 @@ chrome_app_install (JSContextRef context,
     return JSValueMakeNull (context);
   }
 
-  fetch_href_string = JSStringCreateWithUTF8CString
-    ("links = document.getElementsByTagName(\"link\");\n"
+  href_value = ephy_js_context_eval_as_function
+    (context,
+     "links = document.getElementsByTagName(\"link\");\n"
      "console.log(links.length);\n"
      "for (var i = 0; i < links.length; i++) {\n"
      "  console.log(links[i].rel);\n"
@@ -1388,12 +1387,8 @@ chrome_app_install (JSContextRef context,
      "    break;\n"
      "  }\n"
      "}\n"
-     "return null;");
-  fetch_href = JSObjectMakeFunction (context, NULL, 0, NULL, fetch_href_string, NULL, 1, exception);
-  JSStringRelease (fetch_href_string);
-  if (*exception) return JSValueMakeNull (context);
-
-  href_value = JSObjectCallAsFunction (context, fetch_href, NULL, 0, NULL, exception);
+     "return null;",
+     exception);
   if (*exception) return JSValueMakeNull (context);
 
   if (!JSValueIsString (context, href_value)) {
@@ -2626,8 +2621,6 @@ chrome_webstore_private_get_webgl_status (JSContextRef context,
                                           JSValueRef *exception)
 {
   JSObjectRef callback_function;
-  JSStringRef detect_script_string;
-  JSObjectRef detect_script;
   JSValueRef script_result_value;
   gboolean result = FALSE;
 
@@ -2642,14 +2635,12 @@ chrome_webstore_private_get_webgl_status (JSContextRef context,
   }
   if (*exception) return JSValueMakeNull (context);
 
-  detect_script_string = JSStringCreateWithUTF8CString
-    ("var canvas = document.createElement('canvas');"
-     "return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));");
-  detect_script = JSObjectMakeFunction (context, NULL, 0, NULL, detect_script_string, NULL, 1, exception);
-  JSStringRelease (detect_script_string);
+  script_result_value = ephy_js_context_eval_as_function
+    (context,
+     "var canvas = document.createElement('canvas');"
+     "return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));",
+     exception);
   if (*exception) return JSValueMakeNull (context);
-
-  script_result_value = JSObjectCallAsFunction (context, detect_script, NULL, 0, NULL, NULL);
   if (JSValueIsBoolean (context, script_result_value)) {
     result = JSValueToBoolean (context, script_result_value);
   }
@@ -3092,10 +3083,23 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   JSClassRef chrome_management_class;
   JSObjectRef chrome_management_obj;
 
-  JSStringRef event_string;
-  JSObjectRef on_installed_function;
+  const char *event_definition_script =
+    "return {\n"
+    "  _listeners: new Array (),\n"
+    "  addListener: function (listener) {\n"
+    "    this._listeners.push (listener);\n"
+    "  },\n"
+    "  removeListener: function (listener) {\n"
+    "    var idx = this._listeners.indexOf(listener);\n"
+    "    if (idx != -1) this._listeners.splice(idx, 1);\n"
+    "  },\n"
+    "  dispatch: function () {\n"
+    "    for (var i in this._listeners) {\n"
+    "      this._listeners[i].apply(this, arguments);\n"
+    "    }\n"
+    "  }\n"
+    "}\n";
   JSValueRef on_installed_value;
-  JSObjectRef on_uninstalled_function;
   JSValueRef on_uninstalled_value;
 
   global_obj = JSContextGetGlobalObject(context);
@@ -3132,31 +3136,16 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
                                             "management", chrome_management_obj,
                                             &exception);
 
-    event_string = JSStringCreateWithUTF8CString
-      ("return {\n"
-       "  _listeners: new Array (),\n"
-       "  addListener: function (listener) {\n"
-       "    this._listeners.push (listener);\n"
-       "  },\n"
-       "  removeListener: function (listener) {\n"
-       "    var idx = this._listeners.indexOf(listener);\n"
-       "    if (idx != -1) this._listeners.splice(idx, 1);\n"
-       "  },\n"
-       "  dispatch: function () {\n"
-       "    for (var i in this._listeners) {\n"
-       "      this._listeners[i].apply(this, arguments);\n"
-       "    }\n"
-       "  }\n"
-       "}\n");
-    on_installed_function = JSObjectMakeFunction (context, NULL, 0, NULL, event_string, NULL, 1, &exception);
-    on_installed_value = JSObjectCallAsFunction (context, on_installed_function, NULL, 0, NULL, &exception);
+    on_installed_value = ephy_js_context_eval_as_function (context,
+                                                           event_definition_script,
+                                                           &exception);
     ephy_js_object_set_property_from_value (context, chrome_management_obj,
                                             "onInstalled", on_installed_value,
                                             &exception);
     
-    on_uninstalled_function = JSObjectMakeFunction (context, NULL, 0, NULL, event_string, NULL, 1, &exception);
-    JSStringRelease (event_string);
-    on_uninstalled_value = JSObjectCallAsFunction (context, on_uninstalled_function, NULL, 0, NULL, &exception);
+    on_uninstalled_value = ephy_js_context_eval_as_function (context,
+                                                             event_definition_script,
+                                                             &exception);
     ephy_js_object_set_property_from_value (context, chrome_management_obj,
                                             "onUninstalled", on_uninstalled_value,
                                             &exception);
