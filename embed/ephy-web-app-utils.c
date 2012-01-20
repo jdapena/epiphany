@@ -215,7 +215,6 @@ dialog_application_install_response_cb (GtkDialog *dialog,
 
   }
 
-  gtk_widget_destroy (GTK_WIDGET (dialog));
   if (data->callback) {
     if (created) {
       if (!data->callback (response, data->app, data->userdata)) {
@@ -257,6 +256,7 @@ dialog_application_install_response_cb (GtkDialog *dialog,
     notify_notification_show (notification, NULL);
   }
 
+  gtk_widget_destroy (GTK_WIDGET (dialog));
   ephy_application_dialog_data_free (data);
 }
 
@@ -1128,9 +1128,6 @@ chrome_install_cb (gint response,
                           NULL, NULL, NULL, 
                           &error);
 
-    if (!result && error != NULL) {
-      g_warning ("%s : %s", __FUNCTION__, error->message);
-    }
 
     g_object_unref (origin_manifest);
     g_object_unref (destination_manifest);
@@ -1331,10 +1328,13 @@ chrome_app_get_details (JSContextRef context,
     g_free (manifest_path);
     
     is_ok = g_file_query_exists (manifest_file, NULL);
-  }
 
-  if (is_ok) {
-    is_ok = g_file_load_contents (manifest_file, NULL, &manifest_contents, NULL, NULL, NULL);
+    if (is_ok) {
+      is_ok = g_file_load_contents (manifest_file, NULL, 
+                                    &manifest_contents, NULL, NULL, NULL);
+    }
+  } else {
+    is_ok = FALSE;
   }
 
   if (is_ok) {
@@ -1378,10 +1378,7 @@ chrome_app_install (JSContextRef context,
   href_value = ephy_js_context_eval_as_function
     (context,
      "links = document.getElementsByTagName(\"link\");\n"
-     "console.log(links.length);\n"
      "for (var i = 0; i < links.length; i++) {\n"
-     "  console.log(links[i].rel);\n"
-     "  console.log(links[i].href);\n"
      "  if (links[i].rel == 'chrome-application-definition' && links[i].href != null) {\n"
      "    return links[i].href;\n"
      "    break;\n"
@@ -1404,8 +1401,6 @@ chrome_app_install (JSContextRef context,
   if (*exception == NULL && window_href == NULL) {
     ephy_js_set_exception (context, exception, "Couldn't retrieve context location");
   }
-
-  g_warning ("HREF's window %s and manifest %s", window_href, href);
 
   if (window_href && href) {
     char *window_origin;
@@ -2214,7 +2209,6 @@ crx_update_xml_download_status_changed_cb (WebKitDownload *download,
               char *crx_url;
 
               crx_url = (char *) idNode->children->content;
-              g_warning ("%s : retrieved crx url : %s", __FUNCTION__, crx_url);
               if (chrome_retrieve_crx (crx_url, install_data)) {
                 break;
               }
@@ -2337,7 +2331,6 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (*exception) goto finish;
     id = ephy_js_string_to_utf8 (id_string);
   }
-  g_warning ("%s : retrieved id: %s", __FUNCTION__, id?id:"(null)");
 
   prop_value = ephy_js_object_get_property (context, details_obj, "manifest", exception);
   if (*exception) goto finish;
@@ -2346,16 +2339,11 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
 
     manifest_string = JSValueToStringCopy (context, prop_value, exception);
     if (*exception == NULL) {
-      GError *error = NULL;
-
       manifest = ephy_js_string_to_utf8 (manifest_string);
 
-      if (!parse_crx_manifest (manifest, &name, &web_url, &description, &update_url, &best_icon_path, &error) && error != NULL) {
-        g_warning ("%s : failed parsing manifest json: %s", __FUNCTION__, error->message);
-      }
+      parse_crx_manifest (manifest, &name, &web_url, &description, &update_url, &best_icon_path, NULL);
     }
   }
-  g_warning ("%s : retrieved manifest: %s", __FUNCTION__, manifest?manifest:"(null)");
 
   prop_value = ephy_js_object_get_property (context, details_obj, "iconUrl", exception);
   if (*exception) goto finish;
@@ -2365,7 +2353,6 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (*exception) goto finish;
     icon_url = ephy_js_string_to_utf8 (icon_url_string);
   }
-  g_warning ("%s : retrieved iconUrl: %s", __FUNCTION__, icon_url?icon_url:"(null)");
 
   prop_value = ephy_js_object_get_property (context, details_obj, "iconData", exception);
   if (*exception) goto finish;
@@ -2375,7 +2362,6 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (*exception) goto finish;
     icon_data = ephy_js_string_to_utf8 (icon_data_string);
   }
-  g_warning ("%s : retrieved iconData: %s", __FUNCTION__, icon_data?icon_data:"(null)");
 
   prop_value = ephy_js_object_get_property (context, details_obj, "localizedName", exception);
   if (*exception) goto finish;
@@ -2385,7 +2371,6 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (*exception) goto finish;
     localized_name = ephy_js_string_to_utf8 (localized_name_string);
   }
-  g_warning ("%s : retrieved localizedName: %s", __FUNCTION__, localized_name?localized_name:"(null)");
 
   prop_value = ephy_js_object_get_property (context, details_obj, "default_locale", exception);
   if (*exception) goto finish;
@@ -2395,7 +2380,6 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (*exception) goto finish;
     default_locale = ephy_js_string_to_utf8 (default_locale_string);
   }
-  g_warning ("%s : retrieved localizedName: %s", __FUNCTION__, localized_name?localized_name:"(null)");
 
   if (name && manifest && web_url) {
     EphyWebApplication *app;
@@ -2422,8 +2406,6 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
       loader = gdk_pixbuf_loader_new ();
       if (gdk_pixbuf_loader_write (loader, icon_data_decoded, length, &error)) {
         icon_pixbuf = gdk_pixbuf_loader_get_pixbuf (loader);
-      } else {
-        g_warning ("%s: %s", __FUNCTION__, error->message);
       }
       g_free (icon_data_decoded);
 
