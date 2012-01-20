@@ -643,11 +643,11 @@ mozapps_am_installed (JSContextRef context,
 {
   // TODO: create exception
   if (argumentCount != 1) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull (context);
   }
   if (!JSValueIsObject (context, arguments[0])) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Parameter is not a callback");
     return JSValueMakeNull (context);
   } else {
     JSObjectRef object_ref;
@@ -658,14 +658,14 @@ mozapps_am_installed (JSContextRef context,
 
     object_ref = JSValueToObject (context, arguments[0], exception);
     if (object_ref == NULL || !JSObjectIsFunction (context, object_ref)) {
-      *exception = JSValueMakeNumber (context, 1);
+      ephy_js_set_exception (context, exception, "Parameter is not a callback");
       return JSValueMakeNull (context);
     }
 
     location = ephy_js_context_get_location (context, exception);
     if (location == NULL || *exception != NULL) {
       g_free (location);
-      *exception = JSValueMakeNumber (context, 1);
+      ephy_js_set_exception (context, exception, "Couldn't fetch context location");
       goto amInstalledFinish;
     }
 
@@ -673,7 +673,7 @@ mozapps_am_installed (JSContextRef context,
     g_free (location);
 
     if (origin == NULL) {
-      *exception = JSValueMakeNumber (context, 1);
+      ephy_js_set_exception (context, exception, "Couldn't get context origin");
       goto amInstalledFinish;
     } else {
       callback_parameter = mozapps_app_object_from_origin (context, origin, exception);
@@ -741,11 +741,11 @@ mozapps_get_installed_by (JSContextRef context,
 {
   // TODO: create exception
   if (argumentCount != 1) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull(context);
   }
   if (!JSValueIsObject (context, arguments[0])) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Parameter is not a callback");
     return JSValueMakeNull(context);
   } else {
     JSObjectRef object_ref;
@@ -756,13 +756,13 @@ mozapps_get_installed_by (JSContextRef context,
 
     object_ref = JSValueToObject (context, arguments[0], exception);
     if (object_ref == NULL || !JSObjectIsFunction (context, object_ref)) {
-      *exception = JSValueMakeNumber (context, 1);
+      ephy_js_set_exception (context, exception, "Parameter is not a callback");
       return JSValueMakeNull(context);
     }
 
     location = ephy_js_context_get_location (context, exception);
     if (location == NULL) {
-      *exception = JSValueMakeNumber (context, 1);
+      ephy_js_set_exception (context, exception, "Couldn't fetch context location");
       goto getInstalledByFinish;
     }
 
@@ -770,7 +770,7 @@ mozapps_get_installed_by (JSContextRef context,
     g_free (location);
 
     if (origin == NULL) {
-      *exception = JSValueMakeNumber (context, 1);
+      ephy_js_set_exception (context, exception, "Couldn't extract context origin");
       goto getInstalledByFinish;
     } else {
       callback_parameter = mozapps_app_objects_from_install_origin (context, origin, exception);
@@ -953,16 +953,16 @@ mozapps_install (JSContextRef context,
 	char *destination, *destination_uri, *tmp_filename;
 
   if (argumentCount < 1 || argumentCount > 4) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull (context);
   }
   if (!JSValueIsString (context, arguments[0])) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull (context);
   }
   url_str = JSValueToStringCopy (context, arguments[0], exception);
   if (url_str == NULL) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "URL parameter is not a string");
     return JSValueMakeNull (context);
   }
 
@@ -1318,7 +1318,7 @@ chrome_app_get_details (JSContextRef context,
   JSValueRef result = NULL;
 
   if (argumentCount != 0) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull (context);
   }
 
@@ -1371,7 +1371,7 @@ chrome_app_install (JSContextRef context,
   char *href = NULL;
 
   if (argumentCount != 0) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull (context);
   }
 
@@ -1402,7 +1402,7 @@ chrome_app_install (JSContextRef context,
 
   window_href = ephy_js_context_get_location (context, exception);
   if (*exception == NULL && window_href == NULL) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Couldn't retrieve context location");
   }
 
   g_warning ("HREF's window %s and manifest %s", window_href, href);
@@ -1419,7 +1419,7 @@ chrome_app_install (JSContextRef context,
 
       request = webkit_network_request_new (href);
       if (request == NULL) {
-        *exception = JSValueMakeNumber (context, 1);
+        ephy_js_set_exception (context, exception, "Invalid request");
       } else {
         WebKitDownload *download;
         char *tmp_filename;
@@ -1449,7 +1449,7 @@ chrome_app_install (JSContextRef context,
         webkit_download_start (download);
       }
     } else {
-      *exception = JSValueMakeNumber (context, 1);
+      ephy_js_set_exception (context, exception, "Context and manifest origin do not match");
     }
     g_free (window_origin);
     g_free (manifest_origin);
@@ -2319,7 +2319,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
 
   if (argumentCount > 2 || 
       !JSValueIsObject (context, arguments[0])) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull (context);
   } else if (argumentCount == 2) {
     callback_function = JSValueToObject (context, arguments[1], exception);
@@ -2534,7 +2534,7 @@ chrome_webstore_private_complete_install (JSContextRef context,
                                           JSValueRef *exception)
 {
   if (argumentCount > 2) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     goto finish;
   }
 
@@ -2625,13 +2625,13 @@ chrome_webstore_private_get_webgl_status (JSContextRef context,
   gboolean result = FALSE;
 
   if (argumentCount != 1 || !JSValueIsObject(context, arguments[0])) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull (context);
   }
 
   callback_function = JSValueToObject (context, arguments[0], exception);
   if (!*exception && !JSObjectIsFunction (context, callback_function)) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Parameter is not a callback");
   }
   if (*exception) return JSValueMakeNull (context);
 
@@ -2869,14 +2869,14 @@ chrome_management_get_all (JSContextRef context,
   JSObjectRef callback_function = NULL;
 
   if (argumentCount > 1 || (argumentCount == 1 && !JSValueIsObject(context, arguments[0]))) {
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull (context);
   }
 
   if (argumentCount == 1) {
     callback_function = JSValueToObject (context, arguments[0], exception);
     if (!*exception && !JSObjectIsFunction (context, callback_function)) {
-      *exception = JSValueMakeNumber (context, 1);
+      ephy_js_set_exception (context, exception, "Parameter is not a callback");
     }
   }
   if (*exception) return JSValueMakeNull (context);
@@ -2906,14 +2906,14 @@ chrome_management_uninstall (JSContextRef context,
   JSStringRef id_string = NULL;
 
   if (argumentCount > 2 || (argumentCount == 0) || !JSValueIsString(context, arguments[0])){
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull (context);
   }
 
   if (argumentCount == 2) {
     callback_function = JSValueToObject (context, arguments[0], exception);
     if (!*exception && !JSObjectIsFunction (context, callback_function)) {
-      *exception = JSValueMakeNumber (context, 1);
+      ephy_js_set_exception (context, exception, "Callback parameter is not a function");
     }
   }
   if (*exception) return JSValueMakeNull (context);
@@ -2931,7 +2931,7 @@ chrome_management_uninstall (JSContextRef context,
         const char *app_id = ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID);
         if (app_id && g_strcmp0 (id, app_id) == 0) {
           if (!ephy_web_application_delete (app, NULL)) {
-            *exception = JSValueMakeNumber(context, 1);
+            ephy_js_set_exception (context, exception, "Failed to delete application");
           } else {
             uninstalled = TRUE;
           }
@@ -2991,14 +2991,14 @@ chrome_management_launch_app (JSContextRef context,
   JSObjectRef callback_function = NULL;
 
   if (argumentCount > 2 || (argumentCount == 0) || !JSValueIsString(context, arguments[0])){
-    *exception = JSValueMakeNumber (context, 1);
+    ephy_js_set_exception (context, exception, "Invalid arguments");
     return JSValueMakeNull (context);
   }
 
   if (argumentCount == 2) {
     callback_function = JSValueToObject (context, arguments[0], exception);
     if (!*exception && !JSObjectIsFunction (context, callback_function)) {
-      *exception = JSValueMakeNumber (context, 1);
+      ephy_js_set_exception (context, exception, "Callback parameter is not a function");
     }
   }
   if (*exception) return JSValueMakeNull (context);
@@ -3018,7 +3018,7 @@ chrome_management_launch_app (JSContextRef context,
         const char *app_id = ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID);
         if (app_id && g_strcmp0 (id, app_id) == 0) {
           if (!ephy_web_application_launch (app)) {
-            *exception = JSValueMakeNumber(context, 1);
+            ephy_js_set_exception (context, exception, "Failed to launch application");
           }
           break;
         }

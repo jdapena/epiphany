@@ -33,6 +33,9 @@
 #include <JavaScriptCore/JavaScript.h>
 #include <json-glib/json-glib.h>
 
+
+#define ephy_js_set_exception(context,exception,message) (_ephy_js_set_exception (context, exception, __FILE__, __FUNCTION__, __LINE__, message))
+
 G_BEGIN_DECLS
 
 char *        ephy_js_string_to_utf8                   (JSStringRef js_string);
@@ -79,6 +82,14 @@ void          ephy_js_object_set_property_from_value   (JSContextRef context,
                                                         const char *name,
                                                         JSValueRef value,
                                                         JSValueRef *exception);
+
+/* exceptions */
+void          _ephy_js_set_exception                (JSContextRef context,
+                                                     JSValueRef *exception,
+                                                     const char *file,
+                                                     const char *function,
+                                                     int line,
+                                                     const char *message);
 
 /* json-glib helpers */
 

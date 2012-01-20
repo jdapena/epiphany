@@ -283,3 +283,44 @@ ephy_json_path_query_best_icon (const char *path_query,
 
   return result;
 }
+
+void
+_ephy_js_set_exception (JSContextRef context,
+                        JSValueRef *exception,
+                        const char *file,
+                        const char *function,
+                        int line,
+                        const char *message)
+{
+  JSObjectRef exception_obj;
+
+  exception_obj = JSObjectMake (context, NULL, NULL);
+
+  if (file) {
+    ephy_js_object_set_property_from_string (context, exception_obj,
+                                             "sourceURL", file,
+                                             exception);
+  }
+
+  if (function) {
+    ephy_js_object_set_property_from_string (context, exception_obj,
+                                             "name", function,
+                                             exception);
+  }
+
+  if (line) {
+    ephy_js_object_set_property_from_uint64 (context, exception_obj,
+                                             "line", (guint64) line,
+                                             exception);
+  }
+
+  if (message) {
+    ephy_js_object_set_property_from_string (context, exception_obj,
+                                             "message", message,
+                                             exception);
+  }
+
+  if (*exception == NULL) {
+    *exception = exception_obj;
+  }
+}
