@@ -30,6 +30,7 @@
 #define _EPHY_JS_UTILS_H
 
 #include <glib.h>
+#include <json-glib/json-glib.h>
 #include <JavaScriptCore/JavaScript.h>
 
 G_BEGIN_DECLS
@@ -41,6 +42,9 @@ gboolean      ephy_js_context_in_origin            (JSContextRef context,
                                                     const char *origin,
                                                     JSValueRef *exception);
 
+char *        ephy_json_path_query_string          (const char *path_query,
+						    JsonNode *node);
+						    
 G_END_DECLS
 
 #endif /* _EPHY_JS_UTILS_H */

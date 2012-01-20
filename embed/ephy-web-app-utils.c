@@ -441,10 +441,10 @@ ephy_web_application_install_manifest (GtkWindow *window,
   if (json_parser_load_from_file (parser,
                                   manifest_file_path,
                                   &error)) {
-    JsonNode *root_node;
-    JsonNode *node;
+    JsonNode *root_node, *node;
     EphyWebApplication *app;
     char *icon_href = NULL;
+    char *query_result;
 
     app = ephy_web_application_new ();
     ephy_web_application_set_install_origin (app, install_origin);
@@ -452,59 +452,35 @@ ephy_web_application_install_manifest (GtkWindow *window,
 
     // TODO : free nodes
     root_node = json_parser_get_root (parser);
-    node = json_path_query ("$.name", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          ephy_web_application_set_name (app, json_array_get_string_element (array, 0));
-        }
-      }
-      json_node_free (node);
+
+    query_result = ephy_json_path_query_string ("$.name", root_node);
+    if (query_result) {
+      ephy_web_application_set_name (app, query_result);
+      g_free (query_result);
     }
 
-    node = json_path_query ("$.description", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          ephy_web_application_set_description (app, json_array_get_string_element (array, 0));
-        }
-      }
-      json_node_free (node);
+    query_result = ephy_json_path_query_string ("$.description", root_node);
+    if (query_result) {
+      ephy_web_application_set_description (app, query_result);
+      g_free (query_result);
     }
 
-    node = json_path_query ("$.developer.name", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          ephy_web_application_set_author (app, json_array_get_string_element (array, 0));
-        }
-      }
-      json_node_free (node);
+    query_result = ephy_json_path_query_string ("$.developer.name", root_node);
+    if (query_result) {
+      ephy_web_application_set_author (app, query_result);
+      g_free (query_result);
     }
 
-    node = json_path_query ("$.developer.url", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          ephy_web_application_set_author_url (app, json_array_get_string_element (array, 0));
-        }
-      }
-      json_node_free (node);
+    query_result = ephy_json_path_query_string ("$.developer.url", root_node);
+    if (query_result) {
+      ephy_web_application_set_author_url (app, query_result);
+      g_free (query_result);
     }
 
-    node = json_path_query ("$.launch_path", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          ephy_web_application_set_launch_path (app, json_array_get_string_element (array, 0));
-        }
-      }
-      json_node_free (node);
+    query_result = ephy_json_path_query_string ("$.launch_path", root_node);
+    if (query_result) {
+      ephy_web_application_set_launch_path (app, query_result);
+      g_free (query_result);
     }
 
     node = json_path_query ("$.icons", root_node, NULL);
@@ -1262,8 +1238,8 @@ ephy_web_application_install_chrome_manifest (const char *origin,
   if (json_parser_load_from_file (parser,
                                   manifest_file_path,
                                   NULL)) {
-    JsonNode *root_node;
-    JsonNode *node;
+    JsonNode *root_node, *node;
+    char *query_result;
     EphyWebApplication *app;
     char *icon_href = NULL;
 
@@ -1273,46 +1249,31 @@ ephy_web_application_install_chrome_manifest (const char *origin,
 
     // TODO : free nodes
     root_node = json_parser_get_root (parser);
-    node = json_path_query ("$.name", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          ephy_web_application_set_name (app, json_array_get_string_element (array, 0));
-        }
-      }
-      json_node_free (node);
+    query_result = ephy_json_path_query_string ("$.name", root_node);
+    if (query_result) {
+      ephy_web_application_set_name (app, query_result);
+      g_free (query_result);
     }
 
-    node = json_path_query ("$.description", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          ephy_web_application_set_description (app, json_array_get_string_element (array, 0));
-        }
-      }
-      json_node_free (node);
+    query_result = ephy_json_path_query_string ("$.description", root_node);
+    if (query_result) {
+      ephy_web_application_set_description (app, query_result);
+      g_free (query_result);
     }
 
-    node = json_path_query ("$.launch_url", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          SoupURI *launch_uri;
+    query_result = ephy_json_path_query_string ("$.launch_url", root_node);
+    if (query_result) {
+      SoupURI *launch_uri;
 
-          launch_uri = soup_uri_new_with_base (manifest_uri, json_array_get_string_element (array, 0));
-          if (launch_uri) {
-            char *launch_path;
+      launch_uri = soup_uri_new_with_base (manifest_uri, query_result);
+      if (launch_uri) {
+        char *launch_path;
 
-            launch_path = soup_uri_to_string (launch_uri, TRUE);
-            ephy_web_application_set_launch_path (app, launch_path);
-            soup_uri_free (launch_uri);
-          }
-        }
+        launch_path = soup_uri_to_string (launch_uri, TRUE);
+        ephy_web_application_set_launch_path (app, launch_path);
+        soup_uri_free (launch_uri);
       }
-      json_node_free (node);
+      g_free (query_result);
     }
 
     node = json_path_query ("$.icons", root_node, NULL);
@@ -2059,21 +2020,11 @@ crx_get_translation (const char *path, const char *key, const char * default_loc
       parser = json_parser_new ();
       if (json_parser_load_from_file (parser, file_path, NULL)) {
         JsonNode *root_node;
-        JsonNode *node;
 
         root_node = json_parser_get_root (parser);
-        node = json_path_query (key_json_path, root_node, NULL);
-        if (node) {
-          if (JSON_NODE_HOLDS_ARRAY (node)) {
-            JsonArray *array = json_node_get_array (node);
-            if (json_array_get_length (array) > 0) {
-              result = g_strdup (json_array_get_string_element (array, 0));
-            }
-          }
-          json_node_free (node);
-        }
-
+        result = ephy_json_path_query_string (key_json_path, root_node);
       }
+      g_object_unref (parser);
     }
     g_object_unref (file);
     g_free (file_path);
@@ -2105,62 +2056,25 @@ parse_crx_manifest (const char *manifest_data,
 
   if (json_parser_load_from_data (parser, ephy_embed_utils_strip_bom_mark (manifest_data), -1, error)) {
     JsonNode *root_node;
-    JsonNode *node;
 
     root_node = json_parser_get_root (parser);
-    node = json_path_query ("$.name", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          _name = g_strdup (json_array_get_string_element (array, 0));
-          if (_name == NULL)
-            g_set_error (error, ERROR_QUARK,
-                         EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, "No name on manifest");
-        }
-      }
-      json_node_free (node);
-    }
+    _name = ephy_json_path_query_string ("$.name", root_node);
+    if (_name == NULL)
+      g_set_error (error, ERROR_QUARK,
+                   EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, "No name on manifest");
 
     if (*error == NULL) {
-      node = json_path_query ("$.app.launch.web_url", root_node, NULL);
-      if (node) {
-        if (JSON_NODE_HOLDS_ARRAY (node)) {
-          JsonArray *array = json_node_get_array (node);
-          if (json_array_get_length (array) > 0) {
-            _web_url = g_strdup (json_array_get_string_element (array, 0));
-            if (_web_url == NULL)
-              g_set_error (error, ERROR_QUARK,
-                           EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, "No web url on manifest");
-          }
-        }
-        json_node_free (node);
-      }
+      _web_url = ephy_json_path_query_string ("$.app.launch.web_url", root_node);
+      if (_web_url == NULL)
+        g_set_error (error, ERROR_QUARK,
+                     EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, "No web url on manifest");
     }
-
+      
     if (*error == NULL) {
-      node = json_path_query ("$.description", root_node, NULL);
-      if (node) {
-        if (JSON_NODE_HOLDS_ARRAY (node)) {
-          JsonArray *array = json_node_get_array (node);
-          if (json_array_get_length (array) > 0) {
-            _description = g_strdup (json_array_get_string_element (array, 0));
-          }
-        }
-        json_node_free (node);
-      }
+      JsonNode *node;
 
-      node = json_path_query ("$.update_url", root_node, NULL);
-      if (node) {
-        if (JSON_NODE_HOLDS_ARRAY (node)) {
-          JsonArray *array = json_node_get_array (node);
-          if (json_array_get_length (array) > 0) {
-            _update_url = g_strdup (json_array_get_string_element (array, 0));
-          }
-        }
-        json_node_free (node);
-      }
-
+      _description = ephy_json_path_query_string ("$.description", root_node);
+      _update_url = ephy_json_path_query_string ("$.update_url", root_node);
 
       node = json_path_query ("$.icons", root_node, NULL);
       if (node) {
@@ -2199,6 +2113,8 @@ parse_crx_manifest (const char *manifest_data,
 
     }
   }
+
+  g_object_unref (parser);
 
   if (name)
     *name = _name;
@@ -2960,12 +2876,8 @@ chrome_app_object_from_application (JSContextRef context, EphyWebApplication *ap
   }
 
   if (is_ok) {
-    JsonNode *root_node, *node;
-
     result = JSObjectMake (context, NULL, NULL);
     
-    root_node = json_parser_get_root (parser);
-
     {
       const char *id;
       id = ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID);
@@ -3000,26 +2912,28 @@ chrome_app_object_from_application (JSContextRef context, EphyWebApplication *ap
     }
     
     if (is_ok) {
-      is_ok = crx_less;
-      node = json_path_query ("$.version", root_node, NULL);
-      if (node) {
-        if (JSON_NODE_HOLDS_ARRAY (node)) {
-          JsonArray *array = json_node_get_array (node);
-          if (json_array_get_length (array) > 0) {
-            const char *version = json_array_get_string_element (array, 0);
-            is_ok = crx_less || version;
+      JsonNode *root_node;
+      char *query_result;
 
-            if (is_ok && version) {
-              JSObjectSetProperty (context, result, 
-                                   JSStringCreateWithUTF8CString ("version"),
-                                   JSValueMakeString (context, JSStringCreateWithUTF8CString (version)), 
-                                   kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                                   exception);
-              is_ok = (*exception == NULL);
-            }
-          }
+      is_ok = crx_less;
+      root_node = json_parser_get_root (parser);
+
+      query_result = ephy_json_path_query_string ("$.version", root_node);
+      is_ok = crx_less || query_result;
+      if (query_result) {
+        JSStringRef query_string;
+
+        query_string = JSStringCreateWithUTF8CString (query_result);
+        JSObjectSetProperty (context, result, 
+                             JSStringCreateWithUTF8CString ("version"),
+                             JSValueMakeString (context, query_string), 
+                             kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                             exception);
+        JSStringRelease (query_string);
+        if (is_ok && query_result) {
+          is_ok = (*exception == NULL);
         }
-        json_node_free (node);
+        g_free (query_result);
       }
     }
     

@@ -87,3 +87,23 @@ ephy_js_context_in_origin (JSContextRef context,
 
   return result;
 }
+
+char *
+ephy_json_path_query_string (const char *path_query,
+			     JsonNode *node)
+{
+  JsonNode *found_node;
+  char *result = NULL;
+
+  found_node = json_path_query (path_query, node, NULL);
+  if (found_node) {
+    if (JSON_NODE_HOLDS_ARRAY (found_node)) {
+      JsonArray *array = json_node_get_array (found_node);
+      if (json_array_get_length (array) > 0) {
+	result = g_strdup (json_array_get_string_element (array, 0));
+      }
+    }
+    json_node_free (found_node);
+  }
+  return result;
+}
