@@ -865,7 +865,6 @@ finish_install_manifest (EphyMozAppInstallManifestData *manifest_data, JSValueRe
   g_free (manifest_data->install_origin);
   if (manifest_data->error)
     g_error_free (manifest_data->error);
-  g_slice_free (EphyMozAppInstallManifestData, manifest_data);
 
   if (manifest_data->thisObject)
     JSValueUnprotect (context, manifest_data->thisObject);
@@ -873,6 +872,7 @@ finish_install_manifest (EphyMozAppInstallManifestData *manifest_data, JSValueRe
     JSValueUnprotect (context, manifest_data->onSuccessCallback);
   if (manifest_data->onErrorCallback)
     JSValueUnprotect (context, manifest_data->onErrorCallback);
+  g_slice_free (EphyMozAppInstallManifestData, manifest_data);
 
   result = (*exception != NULL)?JSValueMakeNull(context):JSValueMakeUndefined(context);
   JSGlobalContextRelease (context);
