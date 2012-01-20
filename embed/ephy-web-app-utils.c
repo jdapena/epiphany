@@ -53,15 +53,6 @@ static JSValueRef chrome_app_object_from_application (JSContextRef context,
                                                       JSValueRef *exception);
 
 
-/* Some strings in UTF-8 can be preceeded with Byte-Order Mark. We
- * should strip it before passing it to the json-glib parser
- */
-static const char *
-strip_utf8_bom_mark (const char *str)
-{
-  return g_str_has_prefix (str, "\357\273\277")?(str+3):str;
-}
-
 static gboolean
 check_origin (JSContextRef context, const char *origin, JSValueRef *exception)
 {
@@ -439,7 +430,7 @@ mozapp_install_cb (gint response,
 
       receipt_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_MOZILLA_RECEIPT);
 
-      result = g_file_set_contents (receipt_path, strip_utf8_bom_mark (mozapp_install_data->receipt), -1, &err);
+      result = g_file_set_contents (receipt_path, ephy_embed_utils_strip_bom_mark (mozapp_install_data->receipt), -1, &err);
 
       g_free (receipt_path);
     }
@@ -2071,7 +2062,7 @@ chrome_webstore_install_cb (gint response,
       manifest_install_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
 
       result = g_file_set_contents (manifest_install_path,
-                                    strip_utf8_bom_mark (install_data->manifest_data),
+                                    ephy_embed_utils_strip_bom_mark (install_data->manifest_data),
                                     -1,
                                     &(install_data->error));
 
@@ -2199,7 +2190,7 @@ parse_crx_manifest (const char *manifest_data,
 
   parser = json_parser_new ();
 
-  if (json_parser_load_from_data (parser, strip_utf8_bom_mark (manifest_data), -1, error)) {
+  if (json_parser_load_from_data (parser, ephy_embed_utils_strip_bom_mark (manifest_data), -1, error)) {
     JsonNode *root_node;
     JsonNode *node;
 

@@ -46,6 +46,7 @@ gboolean ephy_embed_utils_address_is_existing_absolute_filename (const char *add
 char*    ephy_embed_utils_normalize_address                     (const char *address);
 gboolean ephy_embed_utils_url_is_empty                          (const char *location);
 char*    ephy_embed_utils_url_get_origin                        (const char *location);
+const char *ephy_embed_utils_strip_bom_mark                     (const char *str);
 
 G_END_DECLS
 

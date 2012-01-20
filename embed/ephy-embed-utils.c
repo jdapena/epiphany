@@ -186,3 +186,11 @@ ephy_embed_utils_url_get_origin (const char *url)
   return origin;
 }
 
+/* Some strings in UTF-8 can be preceeded with Byte-Order Mark. We
+ * should strip it before passing it to the json-glib parser
+ */
+const char *
+ephy_embed_utils_strip_bom_mark (const char *str)
+{
+  return g_str_has_prefix (str, "\357\273\277")?(str+3):str;
+}
