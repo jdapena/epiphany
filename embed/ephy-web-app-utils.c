@@ -23,6 +23,7 @@
 #include "ephy-web-app-utils.h"
 
 #include "ephy-debug.h"
+#include "ephy-embed-utils.h"
 #include "ephy-file-helpers.h"
 #include "ephy-js-utils.h"
 #include "ephy-web-application.h"
@@ -61,22 +62,6 @@ strip_utf8_bom_mark (const char *str)
   return g_str_has_prefix (str, "\357\273\277")?(str+3):str;
 }
 
-static char *
-get_origin (const char *url)
-{
-  char *origin;
-  SoupURI *uri, *host_uri;
-
-  uri = soup_uri_new (url);
-
-  host_uri = soup_uri_copy_host (uri);
-  origin = soup_uri_to_string (host_uri, FALSE);
-  soup_uri_free (host_uri);
-  soup_uri_free (uri);
-
-  return origin;
-}
-
 static gboolean
 check_origin (JSContextRef context, const char *origin, JSValueRef *exception)
 {
@@ -97,7 +82,7 @@ check_origin (JSContextRef context, const char *origin, JSValueRef *exception)
       char *location_origin;
 
       location = ephy_js_string_to_utf8 (location_string);
-      location_origin = get_origin (location);
+      location_origin = ephy_embed_utils_url_get_origin (location);
 
       result = (g_strcmp0 (origin, location_origin) == 0);
 
@@ -1075,7 +1060,7 @@ mozapp_install_manifest_download_status_changed_cb (WebKitDownload *download,
     {
       char *origin;
 
-      origin = get_origin (manifest_data->url);
+      origin = ephy_embed_utils_url_get_origin (manifest_data->url);
       ephy_web_application_install_manifest (NULL,
                                              origin,
                                              manifest_data->local_path,
@@ -1192,7 +1177,7 @@ mozapps_install (JSContextRef context,
       location = ephy_js_string_to_utf8 (location_str);
       JSStringRelease (location_str);
 
-      install_manifest_data->install_origin = get_origin (location);
+      install_manifest_data->install_origin = ephy_embed_utils_url_get_origin (location);
       g_free (location);
     } else {
       install_manifest_data->install_origin = NULL;
@@ -1661,8 +1646,8 @@ chrome_app_install (JSContextRef context,
     char *window_origin;
     char *manifest_origin;
 
-    window_origin = get_origin (window_href);
-    manifest_origin = get_origin (href);
+    window_origin = ephy_embed_utils_url_get_origin (window_href);
+    manifest_origin = ephy_embed_utils_url_get_origin (href);
 
     if (window_origin && manifest_origin && g_strcmp0 (window_origin, manifest_origin) == 0) {
       WebKitNetworkRequest *request;

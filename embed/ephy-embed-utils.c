@@ -170,3 +170,19 @@ ephy_embed_utils_url_is_empty (const char *location)
         return is_empty;
 }
 
+char *
+ephy_embed_utils_url_get_origin (const char *url)
+{
+  char *origin;
+  SoupURI *uri, *host_uri;
+
+  uri = soup_uri_new (url);
+
+  host_uri = soup_uri_copy_host (uri);
+  origin = soup_uri_to_string (host_uri, FALSE);
+  soup_uri_free (host_uri);
+  soup_uri_free (uri);
+
+  return origin;
+}
+
