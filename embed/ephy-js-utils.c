@@ -1,0 +1,40 @@
+/* vim: set sw=2 ts=2 sts=2 et: */
+/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/*
+ * ephy-js-utils.c
+ * This file is part of Epiphany
+ *
+ * Copyright © 2012 - Igalia S.L.
+ *
+ * Epiphany is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Epiphany is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Epiphany; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor,
+ * Boston, MA  02110-1301  USA
+ */
+
+#include "config.h"
+#include "ephy-js-utils.h"
+
+char *
+ephy_js_string_to_utf8 (JSStringRef js_string)
+{
+  int length;
+  char *result;
+
+  length = JSStringGetMaximumUTF8CStringSize (js_string);
+  if (length == 0)
+    return NULL;
+  result = g_malloc0 (length);
+  JSStringGetUTF8CString (js_string, result, length);
+  return result;
+}

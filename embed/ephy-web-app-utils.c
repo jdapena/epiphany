@@ -24,6 +24,7 @@
 
 #include "ephy-debug.h"
 #include "ephy-file-helpers.h"
+#include "ephy-js-utils.h"
 #include "ephy-web-application.h"
 
 #include <archive.h>
@@ -50,20 +51,6 @@ static JSValueRef chrome_app_object_from_application (JSContextRef context,
                                                       const char *filter_id, 
                                                       JSValueRef *exception);
 
-
-static char *
-js_string_to_utf8 (JSStringRef js_string)
-{
-  int length;
-  char *result;
-
-  length = JSStringGetMaximumUTF8CStringSize (js_string);
-  if (length == 0)
-    return NULL;
-  result = g_malloc0 (length);
-  JSStringGetUTF8CString (js_string, result, length);
-  return result;
-}
 
 /* Some strings in UTF-8 can be preceeded with Byte-Order Mark. We
  * should strip it before passing it to the json-glib parser
@@ -109,7 +96,7 @@ check_origin (JSContextRef context, const char *origin, JSValueRef *exception)
       char *location;
       char *location_origin;
 
-      location = js_string_to_utf8 (location_string);
+      location = ephy_js_string_to_utf8 (location_string);
       location_origin = get_origin (location);
 
       result = (g_strcmp0 (origin, location_origin) == 0);
@@ -789,7 +776,6 @@ mozapps_am_installed (JSContextRef context,
     JSValueRef location_value;
     JSStringRef location_str;
     char *location;
-    int location_len;
     SoupURI *uri, *host_uri;
     char *origin;
     JSValueRef callback_parameter = NULL;
@@ -813,10 +799,7 @@ mozapps_am_installed (JSContextRef context,
     if (*exception != NULL) {
       goto amInstalledFinish;
     }
-    location_len = JSStringGetMaximumUTF8CStringSize (location_str);
-    location = g_malloc0(location_len);
-    JSStringGetUTF8CString (location_str, location, location_len);
-    JSStringRelease (location_str);
+    location = ephy_js_string_to_utf8 (location_str);
 
     uri = soup_uri_new (location);
     host_uri = soup_uri_copy_host (uri);
@@ -907,7 +890,6 @@ mozapps_get_installed_by (JSContextRef context,
     JSValueRef location_value;
     JSStringRef location_str;
     char *location;
-    int location_len;
     SoupURI *uri, *host_uri;
     char *origin;
     JSValueRef callback_parameter = NULL;
@@ -929,9 +911,7 @@ mozapps_get_installed_by (JSContextRef context,
     }
 
     location_str = JSValueToStringCopy (context, location_value, NULL);
-    location_len = JSStringGetMaximumUTF8CStringSize (location_str);
-    location = g_malloc0(location_len);
-    JSStringGetUTF8CString (location_str, location, location_len);
+    location = ephy_js_string_to_utf8 (location_str);
     JSStringRelease (location_str);
 
     uri = soup_uri_new (location);
@@ -1137,7 +1117,6 @@ mozapps_install (JSContextRef context,
   char *url;
   char *receipt = NULL;
   JSStringRef url_str;
-  int max_url_str_size;
   WebKitNetworkRequest *request;
   WebKitDownload *download;
   EphyMozAppInstallManifestData *install_manifest_data;
@@ -1157,9 +1136,7 @@ mozapps_install (JSContextRef context,
     return JSValueMakeNull (context);
   }
 
-  max_url_str_size = JSStringGetMaximumUTF8CStringSize (url_str);
-  url = g_malloc0 (max_url_str_size);
-  JSStringGetUTF8CString (url_str, url, max_url_str_size);
+  url = ephy_js_string_to_utf8 (url_str);
   JSStringRelease (url_str);
 
   if (argumentCount > 1) {
@@ -1167,9 +1144,7 @@ mozapps_install (JSContextRef context,
 
     json_str_receipt = JSValueCreateJSONString (context, arguments[1], 2, exception);
     if (*exception == NULL && json_str_receipt) {
-      int max_receipt_str_size = JSStringGetMaximumUTF8CStringSize (json_str_receipt);
-      receipt = g_malloc0 (max_receipt_str_size);
-      JSStringGetUTF8CString (json_str_receipt, receipt, max_receipt_str_size);
+      receipt = ephy_js_string_to_utf8 (json_str_receipt);
       JSStringRelease (json_str_receipt);
     }
   }
@@ -1212,12 +1187,10 @@ mozapps_install (JSContextRef context,
 
     if ((*exception == NULL) && JSValueIsString (context, location_value)) {
       JSStringRef location_str;
-      gint location_len;
       char *location;
       location_str = JSValueToStringCopy (context, location_value, NULL);
-      location_len = JSStringGetMaximumUTF8CStringSize (location_str);
-      location = g_malloc0(location_len);
-      JSStringGetUTF8CString (location_str, location, location_len);
+      location = ephy_js_string_to_utf8 (location_str);
+      JSStringRelease (location_str);
 
       install_manifest_data->install_origin = get_origin (location);
       g_free (location);
@@ -1628,7 +1601,6 @@ chrome_app_install (JSContextRef context,
   JSObjectRef fetch_href;
   JSValueRef href_value;
   JSStringRef href_string;
-  int href_length;
   JSStringRef fetch_window_href_string;
   JSValueRef window_href_value;
   char *window_href = NULL;
@@ -1664,9 +1636,7 @@ chrome_app_install (JSContextRef context,
   href_string = JSValueToStringCopy (context, href_value, exception);
   if (*exception) return JSValueMakeNull (context);
 
-  href_length = JSStringGetMaximumUTF8CStringSize (href_string);
-  href = g_malloc0 (href_length);
-  JSStringGetUTF8CString (href_string, href, href_length);
+  href = ephy_js_string_to_utf8 (href_string);
   JSStringRelease (href_string);
 
   fetch_window_href_string = JSStringCreateWithUTF8CString ("window.location.href");
@@ -1681,11 +1651,7 @@ chrome_app_install (JSContextRef context,
     window_href_string = JSValueToStringCopy (context, window_href_value, exception);
 
     if (*exception == NULL) {
-      int window_href_length;
-
-      window_href_length = JSStringGetMaximumUTF8CStringSize (window_href_string);
-      window_href = g_malloc0(window_href_length);
-      JSStringGetUTF8CString (window_href_string, window_href, window_href_length);
+      window_href = ephy_js_string_to_utf8 (window_href_string);
       JSStringRelease (window_href_string);
     }
   }
@@ -2704,7 +2670,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     JSStringRef id_string;
     id_string = JSValueToStringCopy (context, prop_value, exception);
     if (*exception) goto finish;
-    id = js_string_to_utf8 (id_string);
+    id = ephy_js_string_to_utf8 (id_string);
   }
   g_warning ("%s : retrieved id: %s", __FUNCTION__, id?id:"(null)");
 
@@ -2718,7 +2684,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (*exception == NULL) {
       GError *error = NULL;
 
-      manifest = js_string_to_utf8 (manifest_string);
+      manifest = ephy_js_string_to_utf8 (manifest_string);
 
       if (!parse_crx_manifest (manifest, &name, &web_url, &description, &update_url, &best_icon_path, &error) && error != NULL) {
         g_warning ("%s : failed parsing manifest json: %s", __FUNCTION__, error->message);
@@ -2734,7 +2700,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     JSStringRef icon_url_string;
     icon_url_string = JSValueToStringCopy (context, prop_value, exception);
     if (*exception) goto finish;
-    icon_url = js_string_to_utf8 (icon_url_string);
+    icon_url = ephy_js_string_to_utf8 (icon_url_string);
   }
   g_warning ("%s : retrieved iconUrl: %s", __FUNCTION__, icon_url?icon_url:"(null)");
 
@@ -2745,7 +2711,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     JSStringRef icon_data_string;
     icon_data_string = JSValueToStringCopy (context, prop_value, exception);
     if (*exception) goto finish;
-    icon_data = js_string_to_utf8 (icon_data_string);
+    icon_data = ephy_js_string_to_utf8 (icon_data_string);
   }
   g_warning ("%s : retrieved iconData: %s", __FUNCTION__, icon_data?icon_data:"(null)");
 
@@ -2756,7 +2722,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     JSStringRef localized_name_string;
     localized_name_string = JSValueToStringCopy (context, prop_value, exception);
     if (*exception) goto finish;
-    localized_name = js_string_to_utf8 (localized_name_string);
+    localized_name = ephy_js_string_to_utf8 (localized_name_string);
   }
   g_warning ("%s : retrieved localizedName: %s", __FUNCTION__, localized_name?localized_name:"(null)");
 
@@ -2767,7 +2733,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     JSStringRef default_locale_string;
     default_locale_string = JSValueToStringCopy (context, prop_value, exception);
     if (*exception) goto finish;
-    default_locale = js_string_to_utf8 (default_locale_string);
+    default_locale = ephy_js_string_to_utf8 (default_locale_string);
   }
   g_warning ("%s : retrieved localizedName: %s", __FUNCTION__, localized_name?localized_name:"(null)");
 
@@ -3328,7 +3294,7 @@ chrome_management_uninstall (JSContextRef context,
       char *id;
       GList *apps, *node;
 
-      id = js_string_to_utf8 (id_string);
+      id = ephy_js_string_to_utf8 (id_string);
       apps = ephy_web_application_get_applications ();
       for (node = apps; node != NULL; node = g_list_next (node)) {
         EphyWebApplication *app = (EphyWebApplication *) node->data;
@@ -3419,7 +3385,7 @@ chrome_management_launch_app (JSContextRef context,
       char *id;
       GList *apps, *node;
 
-      id = js_string_to_utf8 (id_string);
+      id = ephy_js_string_to_utf8 (id_string);
       apps = ephy_web_application_get_applications ();
       for (node = apps; node != NULL; node = g_list_next (node)) {
         EphyWebApplication *app = (EphyWebApplication *) node->data;

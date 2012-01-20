@@ -25,6 +25,7 @@ INST_H_FILES = \
 	ephy-embed-single.h		\
 	ephy-embed-shell.h		\
 	ephy-embed-utils.h              \
+	ephy-js-utils.h			\
 	ephy-permission-manager.h       \
 	ephy-web-application.h		\
 	ephy-web-view.h
@@ -46,6 +47,7 @@ libephyembed_la_SOURCES = \
 	ephy-embed-shell.c		\
 	ephy-embed-utils.c              \
 	ephy-encodings.c		\
+	ephy-js-utils.c			\
 	ephy-permission-manager.c	\
 	ephy-request-about.c		\
 	ephy-embed-prefs.c		\
