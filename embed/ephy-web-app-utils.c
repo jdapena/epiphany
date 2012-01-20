@@ -441,7 +441,7 @@ ephy_web_application_install_manifest (GtkWindow *window,
   if (json_parser_load_from_file (parser,
                                   manifest_file_path,
                                   &error)) {
-    JsonNode *root_node, *node;
+    JsonNode *root_node;
     EphyWebApplication *app;
     char *icon_href = NULL;
     char *query_result;
@@ -483,39 +483,10 @@ ephy_web_application_install_manifest (GtkWindow *window,
       g_free (query_result);
     }
 
-    node = json_path_query ("$.icons", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array;
-
-        array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          JsonObject *object;
-
-          object = json_array_get_object_element (array, 0);
-          if (object) {
-            GList *members, *node, *best_node;
-            unsigned long int best_size;
-
-            best_size = 0;
-            best_node = NULL;
-            members = json_object_get_members (object);
-            for (node = members; node != NULL; node = g_list_next (node)) {
-              unsigned long int node_size;
-              node_size = strtoul(node->data, NULL, 10);
-              if (node_size != ULONG_MAX && node_size >= best_size) {
-                best_size = node_size;
-                best_node = node;
-              }
-            }
-            if (best_node) {
-              icon_href = g_strconcat (origin, json_object_get_string_member (object, (char *) best_node->data), NULL);
-            }
-            g_list_free (members);
-          }
-        }
-      }
-      json_node_free (node);
+    query_result = ephy_json_path_query_best_icon ("$.icons", root_node);
+    if (query_result) {
+      icon_href = g_strconcat (origin, query_result, NULL);
+      g_free (query_result);
     }
 
     mozapp_install_data = g_slice_new0 (MozAppInstallData);
@@ -1238,7 +1209,7 @@ ephy_web_application_install_chrome_manifest (const char *origin,
   if (json_parser_load_from_file (parser,
                                   manifest_file_path,
                                   NULL)) {
-    JsonNode *root_node, *node;
+    JsonNode *root_node;
     char *query_result;
     EphyWebApplication *app;
     char *icon_href = NULL;
@@ -1276,45 +1247,16 @@ ephy_web_application_install_chrome_manifest (const char *origin,
       g_free (query_result);
     }
 
-    node = json_path_query ("$.icons", root_node, NULL);
-    if (node) {
-      if (JSON_NODE_HOLDS_ARRAY (node)) {
-        JsonArray *array;
+    query_result = ephy_json_path_query_best_icon ("$.icons", root_node);
+    if (query_result) {
+      SoupURI *icon_uri;
 
-        array = json_node_get_array (node);
-        if (json_array_get_length (array) > 0) {
-          JsonObject *object;
-
-          object = json_array_get_object_element (array, 0);
-          if (object) {
-            GList *members, *node, *best_node;
-            unsigned long int best_size;
-
-            best_size = 0;
-            best_node = NULL;
-            members = json_object_get_members (object);
-            for (node = members; node != NULL; node = g_list_next (node)) {
-              unsigned long int node_size;
-              node_size = strtoul(node->data, NULL, 10);
-              if (node_size != ULONG_MAX && node_size >= best_size) {
-                best_size = node_size;
-                best_node = node;
-              }
-            }
-            if (best_node) {
-              SoupURI *icon_uri;
-
-              icon_uri = soup_uri_new_with_base (manifest_uri, json_object_get_string_member (object, (char *) best_node->data));
-              if (icon_uri) {
-                icon_href = soup_uri_to_string (icon_uri, FALSE);
-                soup_uri_free (icon_uri);
-              }
-            }
-            g_list_free (members);
-          }
-        }
+      icon_uri = soup_uri_new_with_base (manifest_uri, query_result);
+      if (icon_uri) {
+        icon_href = soup_uri_to_string (icon_uri, FALSE);
+        soup_uri_free (icon_uri);
       }
-      json_node_free (node);
+      g_free (query_result);
     }
 
     ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
@@ -2071,46 +2013,9 @@ parse_crx_manifest (const char *manifest_data,
     }
       
     if (*error == NULL) {
-      JsonNode *node;
-
       _description = ephy_json_path_query_string ("$.description", root_node);
       _update_url = ephy_json_path_query_string ("$.update_url", root_node);
-
-      node = json_path_query ("$.icons", root_node, NULL);
-      if (node) {
-        if (JSON_NODE_HOLDS_ARRAY (node)) {
-          JsonArray *array;
-          
-          array = json_node_get_array (node);
-          if (json_array_get_length (array) > 0) {
-            JsonObject *object;
-
-            object = json_array_get_object_element (array, 0);
-            if (object) {
-              GList *members, *node, *best_node;
-              unsigned long int best_size;
-
-              best_size = 0;
-              best_node = NULL;
-              members = json_object_get_members (object);
-              for (node = members; node != NULL; node = g_list_next (node)) {
-                unsigned long int node_size;
-                node_size = strtoul(node->data, NULL, 10);
-                if (node_size != ULONG_MAX && node_size >= best_size) {
-                  best_size = node_size;
-                  best_node = node;
-                }
-              }
-              if (best_node) {
-                _best_icon_path = g_strdup (json_object_get_string_member (object, (char *) best_node->data));
-              }
-              g_list_free (members);
-            }
-          }
-        }
-        json_node_free (node);
-      }
-
+      _best_icon_path = ephy_json_path_query_best_icon ("$.icons", root_node);
     }
   }
 

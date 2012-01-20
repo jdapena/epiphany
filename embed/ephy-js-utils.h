@@ -43,7 +43,9 @@ gboolean      ephy_js_context_in_origin            (JSContextRef context,
                                                     JSValueRef *exception);
 
 char *        ephy_json_path_query_string          (const char *path_query,
-						    JsonNode *node);
+                                                    JsonNode *node);
+char *        ephy_json_path_query_best_icon       (const char *path_query,
+                                                    JsonNode *node);
 						    
 G_END_DECLS
 

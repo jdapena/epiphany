@@ -27,6 +27,8 @@
 
 #include "ephy-embed-utils.h"
 
+#include <stdlib.h>
+
 char *
 ephy_js_string_to_utf8 (JSStringRef js_string)
 {
@@ -105,5 +107,50 @@ ephy_json_path_query_string (const char *path_query,
     }
     json_node_free (found_node);
   }
+  return result;
+}
+
+char *
+ephy_json_path_query_best_icon (const char *path_query,
+                                JsonNode *node)
+{
+  JsonNode *found_node;
+  char *result = NULL;
+
+  found_node = json_path_query ("$.icons", node, NULL);
+  if (found_node) {
+    if (JSON_NODE_HOLDS_ARRAY (found_node)) {
+      JsonArray *array;
+
+      array = json_node_get_array (found_node);
+      if (json_array_get_length (array) > 0) {
+        JsonObject *object;
+	
+        object = json_array_get_object_element (array, 0);
+        if (object) {
+          GList *members, *node, *best_node;
+          unsigned long int best_size;
+
+          best_size = 0;
+          best_node = NULL;
+          members = json_object_get_members (object);
+          for (node = members; node != NULL; node = g_list_next (node)) {
+            unsigned long int node_size;
+            node_size = strtoul(node->data, NULL, 10);
+            if (node_size != ULONG_MAX && node_size >= best_size) {
+              best_size = node_size;
+              best_node = node;
+            }
+          }
+          if (best_node) {
+            result = g_strdup  (json_object_get_string_member (object, (char *) best_node->data));
+          }
+          g_list_free (members);
+        }
+      }
+    }
+    json_node_free (found_node);
+  }
+
   return result;
 }
