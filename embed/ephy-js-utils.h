@@ -30,17 +30,54 @@
 #define _EPHY_JS_UTILS_H
 
 #include <glib.h>
-#include <json-glib/json-glib.h>
 #include <JavaScriptCore/JavaScript.h>
+#include <json-glib/json-glib.h>
 
 G_BEGIN_DECLS
 
-char *        ephy_js_string_to_utf8               (JSStringRef js_string);
-char *        ephy_js_context_get_location         (JSContextRef context,
-						    JSValueRef *exception);
-gboolean      ephy_js_context_in_origin            (JSContextRef context,
-                                                    const char *origin,
-                                                    JSValueRef *exception);
+char *        ephy_js_string_to_utf8                   (JSStringRef js_string);
+
+/* JSContextRef helpers */
+
+char *        ephy_js_context_get_location             (JSContextRef context,
+                                                        JSValueRef *exception);
+gboolean      ephy_js_context_in_origin                (JSContextRef context,
+                                                        const char *origin,
+                                                        JSValueRef *exception);
+
+/* JSObjectRef helpers */
+
+JSValueRef    ephy_js_object_get_property              (JSContextRef context,
+                                                        JSObjectRef obj,
+                                                        const char *name,
+                                                        JSValueRef *exception);
+void          ephy_js_object_set_property_from_string  (JSContextRef context,
+                                                        JSObjectRef obj,
+                                                        const char *name,
+                                                        const char *value,
+                                                        JSValueRef *exception);
+void          ephy_js_object_set_property_from_uint64  (JSContextRef context,
+                                                        JSObjectRef obj,
+                                                        const char *name,
+                                                        guint64 value,
+                                                        JSValueRef *exception);
+void          ephy_js_object_set_property_from_boolean (JSContextRef context,
+                                                        JSObjectRef obj,
+                                                        const char *name,
+                                                        gboolean value,
+                                                        JSValueRef *exception);
+void          ephy_js_object_set_property_from_json    (JSContextRef context,
+                                                        JSObjectRef obj,
+                                                        const char *name,
+                                                        const char *json_value,
+                                                        JSValueRef *exception);
+void          ephy_js_object_set_property_from_value   (JSContextRef context,
+                                                        JSObjectRef obj,
+                                                        const char *name,
+                                                        JSValueRef value,
+                                                        JSValueRef *exception);
+
+/* json-glib helpers */
 
 char *        ephy_json_path_query_string          (const char *path_query,
                                                     JsonNode *node);

@@ -551,24 +551,16 @@ mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *a
     metadata_info = g_file_query_info (manifest_file, G_FILE_ATTRIBUTE_TIME_MODIFIED, 0, NULL, NULL);
     is_ok = (metadata_info != NULL);
     created = g_file_info_get_attribute_uint64 (metadata_info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
-    
-    JSObjectSetProperty (context, result, 
-                         JSStringCreateWithUTF8CString ("manifest"),
-                         JSValueMakeFromJSONString (context, JSStringCreateWithUTF8CString (manifest_contents)), 
-                         kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                         exception);
 
-    JSObjectSetProperty (context, result, 
-                         JSStringCreateWithUTF8CString ("origin"),
-                         JSValueMakeString (context, JSStringCreateWithUTF8CString (ephy_web_application_get_origin(app))), 
-                         kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                         exception);
-
-    JSObjectSetProperty (context, result, 
-                         JSStringCreateWithUTF8CString ("install_time"),
-                         JSValueMakeNumber (context, created), 
-                         kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                         exception);
+    ephy_js_object_set_property_from_json (context, result,
+                                           "manifest", manifest_contents,
+                                           exception);
+    ephy_js_object_set_property_from_string (context, result,
+                                             "origin", ephy_web_application_get_origin(app),
+                                             exception);
+    ephy_js_object_set_property_from_uint64 (context, result,
+                                             "install_time", created,
+                                             exception);
     is_ok = (*exception == NULL);
     
   }
@@ -584,11 +576,9 @@ mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *a
     if (g_file_query_exists (receipt_file, NULL)) {
       char *receipt_contents;
       if (g_file_load_contents (receipt_file, NULL, &receipt_contents, NULL, NULL, NULL)) {
-        JSObjectSetProperty (context, result, 
-                             JSStringCreateWithUTF8CString ("receipt"),
-                             JSValueMakeFromJSONString (context, JSStringCreateWithUTF8CString (receipt_contents)), 
-                             kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                             exception);
+        ephy_js_object_set_property_from_json (context, result,
+                                               "receipt", receipt_contents,
+                                               exception);
         is_ok = (*exception == NULL);
       }
     }
@@ -596,11 +586,9 @@ mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *a
   }
 
   if (is_ok && ephy_web_application_get_install_origin (app) != NULL) {
-    JSObjectSetProperty (context, result, 
-                         JSStringCreateWithUTF8CString ("installOrigin"),
-                         JSValueMakeString (context, JSStringCreateWithUTF8CString (ephy_web_application_get_install_origin (app))), 
-                         kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                         exception);
+    ephy_js_object_set_property_from_string (context, result,
+                                             "installOrigin", ephy_web_application_get_install_origin (app),
+                                             exception);
     is_ok = (*exception == NULL);
   }
   
@@ -827,10 +815,7 @@ finish_install_manifest (EphyMozAppInstallManifestData *manifest_data, JSValueRe
                             manifest_data->thisObject, 0, NULL, exception);
   } else if (*exception == NULL && manifest_data->error != NULL && manifest_data->onErrorCallback) {
     JSValueRef errorValue[1];
-    JSStringRef codeString = NULL;
-    JSStringRef messageString;
-    JSStringRef prop_name;
-    JSValueRef prop_value;
+    const char *code = NULL;
 
     errorValue[0] = JSObjectMakeError (context, 0, 0, exception);
 
@@ -838,47 +823,33 @@ finish_install_manifest (EphyMozAppInstallManifestData *manifest_data, JSValueRe
       if (manifest_data->error->domain == ERROR_QUARK) {
         switch (manifest_data->error->code) {
         case EPHY_WEB_APPLICATION_FORBIDDEN:
-          codeString = JSStringCreateWithUTF8CString ("permissionDenied"); break;
+          code = "permissionDenied"; break;
         case EPHY_WEB_APPLICATION_MANIFEST_URL_ERROR:
-          codeString = JSStringCreateWithUTF8CString ("manifestURLError"); break;
+          code = "manifestURLError"; break;
         case EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR:
-          codeString = JSStringCreateWithUTF8CString ("manifestParseError"); break;
+          code = "manifestParseError"; break;
         case EPHY_WEB_APPLICATION_MANIFEST_INVALID:
-          codeString = JSStringCreateWithUTF8CString ("invalidManifest"); break;
+          code = "invalidManifest"; break;
         case EPHY_WEB_APPLICATION_NETWORK:
-          codeString = JSStringCreateWithUTF8CString ("networkError"); break;
+          code = "networkError"; break;
         case EPHY_WEB_APPLICATION_CANCELLED:
         default:
-          codeString = JSStringCreateWithUTF8CString ("denied"); break;
+          code = "denied"; break;
         }
       } else {
-        codeString = JSStringCreateWithUTF8CString ("denied");
+        code = "denied";
       }
 
-      prop_name = JSStringCreateWithUTF8CString ("code");
-      prop_value = JSValueMakeString (context, codeString);
-      JSStringRelease (codeString);
-      JSObjectSetProperty (context,
-                           JSValueToObject (context, errorValue[0], NULL),
-                           prop_name,
-                           prop_value,
-                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                           exception);
-      JSStringRelease (prop_name);
+      ephy_js_object_set_property_from_string (context,
+                                               JSValueToObject (context, errorValue[0], NULL),
+                                               "code", code,
+                                               exception);
     }
 
     if (*exception == NULL) {
-      prop_name = JSStringCreateWithUTF8CString ("message");
-      messageString = JSStringCreateWithUTF8CString (manifest_data->error->message);
-      prop_value = JSValueMakeString (context, messageString);
-      JSStringRelease (messageString);
-      JSObjectSetProperty (context,
-                           JSValueToObject (context, errorValue[0], NULL),
-                           prop_name,
-                           prop_value,
-                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                           exception);
-      JSStringRelease (prop_name);
+      ephy_js_object_set_property_from_string (context, JSValueToObject (context, errorValue[0], NULL),
+                                               "message", manifest_data->error->message,
+                                               exception);
     }
 
     if (*exception == NULL) {
@@ -1119,28 +1090,20 @@ ephy_web_application_setup_mozilla_api (JSGlobalContextRef context)
   JSClassRef mozAppsClassDef;
   JSObjectRef mozAppsClassObj;
   JSObjectRef globalObj;
-  JSStringRef navigatorStr;
   JSValueRef navigatorRef;
   JSObjectRef navigatorObj;
-  JSStringRef mozAppsStr;
   JSValueRef exception = NULL;
 
   globalObj = JSContextGetGlobalObject(context);
-  navigatorStr = JSStringCreateWithUTF8CString("navigator");
-  navigatorRef = JSObjectGetProperty (context, globalObj,
-                                      navigatorStr, &exception);
-  JSStringRelease (navigatorStr);
+  navigatorRef = ephy_js_object_get_property (context, globalObj, "navigator", &exception);
   navigatorObj = JSValueToObject (context, navigatorRef, &exception);
-
 
   mozAppsClassDef = JSClassCreate (&mozapps_class_def);
   mozAppsClassObj = JSObjectMake (context, mozAppsClassDef, context);
   JSObjectSetPrivate (mozAppsClassObj, context);
-  mozAppsStr = JSStringCreateWithUTF8CString("mozApps");
-  JSObjectSetProperty(context, navigatorObj, mozAppsStr, mozAppsClassObj,
-                      kJSPropertyAttributeNone, &exception);
+  ephy_js_object_set_property_from_value (context, navigatorObj, 
+                                          "mozApps", mozAppsClassObj, &exception);
   JSClassRelease (mozAppsClassDef);
-  JSStringRelease (mozAppsStr);
 }
 
 static gboolean
@@ -1616,12 +1579,11 @@ finish_chrome_webstore_install_data (ChromeWebstoreInstallData *install_data)
 
     app_object = chrome_app_object_from_application (install_data->context, install_data->app, NULL, &exception);
     if (app_object && ! JSValueIsNull (install_data->context, app_object)) {
-      JSStringRef prop_name;
       JSValueRef launch_event_value;
 
-      prop_name = JSStringCreateWithUTF8CString ("dispatch");
-      launch_event_value = JSObjectGetProperty (install_data->context, install_data->on_installed, prop_name, &exception);
-      JSStringRelease (prop_name);
+      launch_event_value = ephy_js_object_get_property (install_data->context,
+                                                        install_data->on_installed,
+                                                        "dispatch", &exception);
 
       if (launch_event_value && JSValueIsObject (install_data->context, launch_event_value)) {
         JSObjectRef launch_event_function;
@@ -2346,7 +2308,6 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
                                                      JSValueRef *exception)
 {
   JSObjectRef details_obj;
-  JSStringRef prop_name;
   JSValueRef prop_value;
   char *id = NULL;
   char *default_locale = NULL;
@@ -2373,8 +2334,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   details_obj = JSValueToObject (context, arguments[0], exception);
   if (*exception) return JSValueMakeNull (context);
 
-  prop_name = JSStringCreateWithUTF8CString ("id");
-  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  prop_value = ephy_js_object_get_property (context, details_obj, "id", exception);
   if (*exception) goto finish;
   if (JSValueIsString (context, prop_value)) {
     JSStringRef id_string;
@@ -2384,8 +2344,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   }
   g_warning ("%s : retrieved id: %s", __FUNCTION__, id?id:"(null)");
 
-  prop_name = JSStringCreateWithUTF8CString ("manifest");
-  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  prop_value = ephy_js_object_get_property (context, details_obj, "manifest", exception);
   if (*exception) goto finish;
   if (JSValueIsString (context, prop_value)) {
     JSStringRef manifest_string;
@@ -2403,8 +2362,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   }
   g_warning ("%s : retrieved manifest: %s", __FUNCTION__, manifest?manifest:"(null)");
 
-  prop_name = JSStringCreateWithUTF8CString ("iconUrl");
-  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  prop_value = ephy_js_object_get_property (context, details_obj, "iconUrl", exception);
   if (*exception) goto finish;
   if (JSValueIsString (context, prop_value)) {
     JSStringRef icon_url_string;
@@ -2414,8 +2372,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   }
   g_warning ("%s : retrieved iconUrl: %s", __FUNCTION__, icon_url?icon_url:"(null)");
 
-  prop_name = JSStringCreateWithUTF8CString ("iconData");
-  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  prop_value = ephy_js_object_get_property (context, details_obj, "iconData", exception);
   if (*exception) goto finish;
   if (JSValueIsString (context, prop_value)) {
     JSStringRef icon_data_string;
@@ -2425,8 +2382,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   }
   g_warning ("%s : retrieved iconData: %s", __FUNCTION__, icon_data?icon_data:"(null)");
 
-  prop_name = JSStringCreateWithUTF8CString ("localizedName");
-  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  prop_value = ephy_js_object_get_property (context, details_obj, "localizedName", exception);
   if (*exception) goto finish;
   if (JSValueIsString (context, prop_value)) {
     JSStringRef localized_name_string;
@@ -2436,8 +2392,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   }
   g_warning ("%s : retrieved localizedName: %s", __FUNCTION__, localized_name?localized_name:"(null)");
 
-  prop_name = JSStringCreateWithUTF8CString ("default_locale");
-  prop_value = JSObjectGetProperty (context, details_obj, prop_name, exception);
+  prop_value = ephy_js_object_get_property (context, details_obj, "default_locale", exception);
   if (*exception) goto finish;
   if (JSValueIsString (context, prop_value)) {
     JSStringRef default_locale_string;
@@ -2788,31 +2743,24 @@ chrome_app_object_from_application (JSContextRef context, EphyWebApplication *ap
       id = ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID);
       is_ok = crx_less || id;
       if (is_ok && id) {
-        JSObjectSetProperty (context, result, 
-                             JSStringCreateWithUTF8CString ("id"),
-                             JSValueMakeString (context, JSStringCreateWithUTF8CString (id)), 
-                             kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                             exception);
+        ephy_js_object_set_property_from_string (context, result,
+                                                 "id", id, exception);
         is_ok = (*exception == NULL);
       }
     }
 
     is_ok = is_ok && ephy_web_application_get_name (app);
     if (is_ok) {
-      JSObjectSetProperty (context, result, 
-                           JSStringCreateWithUTF8CString ("name"),
-                           JSValueMakeString (context, JSStringCreateWithUTF8CString (ephy_web_application_get_name (app))), 
-                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                           exception);
+      ephy_js_object_set_property_from_string (context, result,
+                                               "name", ephy_web_application_get_name (app),
+                                               exception);
       is_ok = (*exception == NULL);
     }
 
     if (is_ok && ephy_web_application_get_description (app)) {
-      JSObjectSetProperty (context, result, 
-                           JSStringCreateWithUTF8CString ("description"),
-                           JSValueMakeString (context, JSStringCreateWithUTF8CString (ephy_web_application_get_description (app))), 
-                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                           exception);
+      ephy_js_object_set_property_from_string (context, result,
+                                               "description", ephy_web_application_get_description (app),
+                                               exception);
       is_ok = (*exception == NULL);
     }
     
@@ -2826,15 +2774,9 @@ chrome_app_object_from_application (JSContextRef context, EphyWebApplication *ap
       query_result = ephy_json_path_query_string ("$.version", root_node);
       is_ok = crx_less || query_result;
       if (query_result) {
-        JSStringRef query_string;
-
-        query_string = JSStringCreateWithUTF8CString (query_result);
-        JSObjectSetProperty (context, result, 
-                             JSStringCreateWithUTF8CString ("version"),
-                             JSValueMakeString (context, query_string), 
-                             kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                             exception);
-        JSStringRelease (query_string);
+        ephy_js_object_set_property_from_string (context, result,
+                                                 "version", query_result,
+                                                 exception);
         if (is_ok && query_result) {
           is_ok = (*exception == NULL);
         }
@@ -2843,29 +2785,20 @@ chrome_app_object_from_application (JSContextRef context, EphyWebApplication *ap
     }
     
     if (is_ok) {
-      JSObjectSetProperty (context, result, 
-                           JSStringCreateWithUTF8CString ("mayDisabled"),
-                           JSValueMakeBoolean (context, TRUE), 
-                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                           exception);
+      ephy_js_object_set_property_from_boolean (context, result,
+                                                "mayDisabled", TRUE, exception);
       is_ok = (*exception == NULL);
     }
 
     if (is_ok) {
-      JSObjectSetProperty (context, result, 
-                           JSStringCreateWithUTF8CString ("enabled"),
-                           JSValueMakeBoolean (context, TRUE), 
-                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                           exception);
+      ephy_js_object_set_property_from_boolean (context, result,
+                                                "enabled", TRUE, exception);
       is_ok = (*exception == NULL);
     }
 
     if (is_ok) {
-      JSObjectSetProperty (context, result, 
-                           JSStringCreateWithUTF8CString ("isApp"),
-                           JSValueMakeBoolean (context, TRUE), 
-                           kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                           exception);
+      ephy_js_object_set_property_from_boolean (context, result,
+                                                "isApp", TRUE, exception);
       is_ok = (*exception == NULL);
     }
 
@@ -2874,11 +2807,9 @@ chrome_app_object_from_application (JSContextRef context, EphyWebApplication *ap
       
       full_uri = ephy_web_application_get_full_uri (app);
       if (full_uri) {
-        JSObjectSetProperty (context, result, 
-                             JSStringCreateWithUTF8CString ("appLaunchUrl"),
-                             JSValueMakeString (context, JSStringCreateWithUTF8CString (full_uri)), 
-                             kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
-                             exception);
+        ephy_js_object_set_property_from_string (context, result,
+                                                 "appLaunchUrl", full_uri,
+                                                 exception);
         g_free (full_uri);
         is_ok = (*exception == NULL);
       }
@@ -3037,13 +2968,9 @@ chrome_management_uninstall (JSContextRef context,
       on_uninstalled = JSValueToObject (context, on_uninstalled_value, exception);
 
       if (on_uninstalled) {
-        JSStringRef prop_name;
         JSValueRef launch_event_value;
         
-        prop_name = JSStringCreateWithUTF8CString ("dispatch");
-        launch_event_value = JSObjectGetProperty (context, on_uninstalled, prop_name, exception);
-        JSStringRelease (prop_name);
-
+        launch_event_value = ephy_js_object_get_property (context, on_uninstalled, "dispatch", exception);
         if (launch_event_value && JSValueIsObject (context, launch_event_value)) {
           JSObjectRef launch_event_function;
 
@@ -3152,7 +3079,6 @@ void
 ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
 {
   JSObjectRef global_obj;
-  JSStringRef prop_name;
   JSValueRef exception = NULL;
 
   JSObjectRef chrome_obj;
@@ -3175,15 +3101,13 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   global_obj = JSContextGetGlobalObject(context);
 
   chrome_obj = JSObjectMake (context, NULL, NULL);
-  prop_name = JSStringCreateWithUTF8CString ("chrome");
-  JSObjectSetProperty (context, global_obj, prop_name, chrome_obj, kJSPropertyAttributeNone, &exception);
-  JSStringRelease (prop_name);
+  ephy_js_object_set_property_from_value (context, global_obj,
+                                          "chrome", chrome_obj, &exception);
 
   chrome_app_class = JSClassCreate (&chrome_app_class_def);
   chrome_app_obj = JSObjectMake (context, chrome_app_class, NULL);
-  prop_name = JSStringCreateWithUTF8CString ("app");
-  JSObjectSetProperty (context, chrome_obj, prop_name, chrome_app_obj, kJSPropertyAttributeNone, &exception);
-  JSStringRelease (prop_name);
+  ephy_js_object_set_property_from_value (context, chrome_obj,
+                                          "app", chrome_app_obj, &exception);
 
   /* Currently we don't support permissions management for applications.
    * The permissions needed for Chrome Webstore are webstorePrivate and management.
@@ -3197,16 +3121,16 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
     chrome_webstore_private_class = JSClassCreate (&chrome_webstore_private_class_def);
     chrome_webstore_private_obj = JSObjectMake (context, chrome_webstore_private_class, context);
     JSObjectSetPrivate (chrome_webstore_private_obj, context);
-    prop_name = JSStringCreateWithUTF8CString ("webstorePrivate");
-    JSObjectSetProperty (context, chrome_obj, prop_name, chrome_webstore_private_obj, kJSPropertyAttributeNone, &exception);
-    JSStringRelease (prop_name);
+    ephy_js_object_set_property_from_value (context, chrome_obj,
+                                            "webstorePrivate", chrome_webstore_private_obj,
+                                            &exception);
 
     /* only accessible from webstore */
     chrome_management_class = JSClassCreate (&chrome_management_class_def);
     chrome_management_obj = JSObjectMake (context, chrome_management_class, NULL);
-    prop_name = JSStringCreateWithUTF8CString ("management");
-    JSObjectSetProperty (context, chrome_obj, prop_name, chrome_management_obj, kJSPropertyAttributeNone, &exception);
-    JSStringRelease (prop_name);
+    ephy_js_object_set_property_from_value (context, chrome_obj,
+                                            "management", chrome_management_obj,
+                                            &exception);
 
     event_string = JSStringCreateWithUTF8CString
       ("return {\n"
@@ -3226,15 +3150,15 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
        "}\n");
     on_installed_function = JSObjectMakeFunction (context, NULL, 0, NULL, event_string, NULL, 1, &exception);
     on_installed_value = JSObjectCallAsFunction (context, on_installed_function, NULL, 0, NULL, &exception);
-    prop_name = JSStringCreateWithUTF8CString ("onInstalled");
-    JSObjectSetProperty (context, chrome_management_obj, prop_name, on_installed_value, kJSPropertyAttributeNone, &exception);
-    JSStringRelease (prop_name);
+    ephy_js_object_set_property_from_value (context, chrome_management_obj,
+                                            "onInstalled", on_installed_value,
+                                            &exception);
     
     on_uninstalled_function = JSObjectMakeFunction (context, NULL, 0, NULL, event_string, NULL, 1, &exception);
     JSStringRelease (event_string);
     on_uninstalled_value = JSObjectCallAsFunction (context, on_uninstalled_function, NULL, 0, NULL, &exception);
-    prop_name = JSStringCreateWithUTF8CString ("onUninstalled");
-    JSObjectSetProperty (context, chrome_management_obj, prop_name, on_uninstalled_value, kJSPropertyAttributeNone, &exception);
-    JSStringRelease (prop_name);
+    ephy_js_object_set_property_from_value (context, chrome_management_obj,
+                                            "onUninstalled", on_uninstalled_value,
+                                            &exception);
   }
 }

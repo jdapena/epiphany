@@ -90,6 +90,113 @@ ephy_js_context_in_origin (JSContextRef context,
   return result;
 }
 
+JSValueRef
+ephy_js_object_get_property (JSContextRef context,
+                             JSObjectRef obj,
+                             const char *name,
+                             JSValueRef *exception)
+{
+  JSStringRef name_string;
+  JSValueRef result;
+
+  name_string = JSStringCreateWithUTF8CString (name);
+  result = JSObjectGetProperty (context, obj, name_string, exception);
+  JSStringRelease (name_string);
+
+  return result;
+}
+
+void
+ephy_js_object_set_property_from_string (JSContextRef context,
+                                         JSObjectRef obj,
+                                         const char *name,
+                                         const char *value,
+                                         JSValueRef *exception)
+{
+  JSStringRef name_string;
+  JSStringRef value_string;
+
+  name_string = JSStringCreateWithUTF8CString (name);
+  value_string = JSStringCreateWithUTF8CString (value);
+  JSObjectSetProperty (context, obj, 
+                       name_string, JSValueMakeString (context, value_string),
+                       kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                       exception);
+  JSStringRelease (name_string);
+  JSStringRelease (value_string);
+}
+
+void
+ephy_js_object_set_property_from_uint64 (JSContextRef context,
+                                         JSObjectRef obj,
+                                         const char *name,
+                                         guint64 value,
+                                         JSValueRef *exception)
+{
+  JSStringRef name_string;
+
+  name_string = JSStringCreateWithUTF8CString (name);
+  JSObjectSetProperty (context, obj, 
+                       name_string, JSValueMakeNumber (context, value),
+                       kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                       exception);
+  JSStringRelease (name_string);
+}
+
+void
+ephy_js_object_set_property_from_boolean (JSContextRef context,
+                                          JSObjectRef obj,
+                                          const char *name,
+                                          gboolean value,
+                                          JSValueRef *exception)
+{
+  JSStringRef name_string;
+
+  name_string = JSStringCreateWithUTF8CString (name);
+  JSObjectSetProperty (context, obj, 
+                       name_string, JSValueMakeBoolean (context, value),
+                       kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                       exception);
+  JSStringRelease (name_string);
+}
+
+void
+ephy_js_object_set_property_from_json (JSContextRef context,
+				       JSObjectRef obj,
+                                       const char *name,
+                                       const char *json_value,
+                                       JSValueRef *exception)
+{
+  JSStringRef name_string;
+  JSStringRef value_string;
+
+  name_string = JSStringCreateWithUTF8CString (name);
+  value_string = JSStringCreateWithUTF8CString (json_value);
+  JSObjectSetProperty (context, obj, 
+                       name_string, JSValueMakeFromJSONString (context, value_string),
+                       kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                       exception);
+  JSStringRelease (name_string);
+  JSStringRelease (value_string);
+}
+
+void
+ephy_js_object_set_property_from_value (JSContextRef context,
+					JSObjectRef obj,
+                                        const char *name,
+                                        JSValueRef value,
+                                        JSValueRef *exception)
+{
+  JSStringRef name_string;
+
+  name_string = JSStringCreateWithUTF8CString (name);
+  JSObjectSetProperty (context, obj, 
+                       name_string, value,
+                       kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                       exception);
+  JSStringRelease (name_string);
+}
+
 char *
 ephy_json_path_query_string (const char *path_query,
 			     JsonNode *node)
@@ -102,7 +209,7 @@ ephy_json_path_query_string (const char *path_query,
     if (JSON_NODE_HOLDS_ARRAY (found_node)) {
       JsonArray *array = json_node_get_array (found_node);
       if (json_array_get_length (array) > 0) {
-	result = g_strdup (json_array_get_string_element (array, 0));
+        result = g_strdup (json_array_get_string_element (array, 0));
       }
     }
     json_node_free (found_node);
