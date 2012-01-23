@@ -2105,12 +2105,9 @@ crx_download_status_changed_cb (WebKitDownload *download,
   switch (status) {
   case WEBKIT_DOWNLOAD_STATUS_FINISHED:
     {
-      char *crx_contents_dirname;
       install_data->crx_file_path = g_filename_from_uri (webkit_download_get_destination_uri (download), NULL, NULL);
-      crx_contents_dirname = g_strdup ("ephy-download-XXXXXX");
-      g_mkdtemp (crx_contents_dirname);
-      install_data->crx_contents_path = g_build_filename (ephy_file_tmp_dir (), crx_contents_dirname, NULL);
-      g_free (crx_contents_dirname);
+      install_data->crx_contents_path = g_build_filename (ephy_file_tmp_dir (), "ephy-download-XXXXXX", NULL);
+      g_mkdtemp (install_data->crx_contents_path);
 
       crx_extract (install_data->crx_file_path, install_data->crx_contents_path,
                    G_PRIORITY_DEFAULT_IDLE, NULL,
@@ -2166,14 +2163,11 @@ ephy_web_application_install_crx_extension (const char *origin,
                                             const char *crx_path)
 {
   ChromeWebstoreInstallData *install_data;
-  char * crx_contents_dirname;
 
   install_data = g_slice_new0 (ChromeWebstoreInstallData);
   install_data->crx_file_path = g_filename_from_uri (crx_path, NULL, NULL);
-  crx_contents_dirname = g_strdup ("ephy-download-XXXXXX");
-  g_mkdtemp (crx_contents_dirname);
-  install_data->crx_contents_path = g_build_filename (ephy_file_tmp_dir (), crx_contents_dirname, NULL);
-  g_free (crx_contents_dirname);
+  install_data->crx_contents_path = g_build_filename (ephy_file_tmp_dir (), "ephy-download-XXXXXX", NULL);
+  g_mkdtemp (install_data->crx_contents_path);
   install_data->app = ephy_web_application_new ();
   ephy_web_application_set_install_origin (install_data->app, origin);
   crx_extract (install_data->crx_file_path,
