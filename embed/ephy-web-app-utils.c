@@ -3101,7 +3101,7 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
    * should check app permissions.
    */
 
-  if (ephy_js_context_in_origin (context, "https://chrome.google.com", &exception)) {
+  if (ephy_js_context_in_origin (context, "https://chrome.google.com/", &exception)) {
 
     /* only accessible from webstore */
     chrome_webstore_private_class = JSClassCreate (&chrome_webstore_private_class_def);
