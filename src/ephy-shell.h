@@ -31,6 +31,7 @@
 #include "ephy-bookmarks.h"
 #include "ephy-window.h"
 #include "ephy-embed.h"
+#include "ephy-web-application.h"
 
 #include <webkit/webkit.h>
 #include <glib-object.h>
@@ -125,6 +126,10 @@ EphyEmbed      *ephy_shell_new_tab_full                 (EphyShell *shell,
                                                          guint32 user_time);
 
 GObject        *ephy_shell_get_session                  (EphyShell *shell);
+
+EphyWebApplication *ephy_shell_get_application          (EphyShell *shell);
+void            ephy_shell_set_application              (EphyShell *shell,
+                                                         EphyWebApplication *app);
 
 GObject        *ephy_shell_get_net_monitor              (EphyShell *shell);
 

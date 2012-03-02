@@ -54,6 +54,7 @@
 struct _EphyShellPrivate {
   EphySession *session;
   GObject *lockdown;
+  EphyWebApplication *application;
   EphyBookmarks *bookmarks;
   EphyExtensionsManager *extensions_manager;
   GNetworkMonitor *network_monitor;
@@ -67,6 +68,7 @@ struct _EphyShellPrivate {
 };
 
 EphyShell *ephy_shell = NULL;
+EphyWebApplication *ephy_application = NULL;
 
 static void ephy_shell_class_init (EphyShellClass *klass);
 static void ephy_shell_init   (EphyShell *shell);
@@ -623,6 +625,12 @@ ephy_shell_dispose (GObject *object)
     priv->network_monitor = NULL;
   }
 
+  if (priv->application != NULL) {
+    LOG ("Unref application ");
+    g_object_unref (priv->application);
+    priv->application = NULL;
+  }
+
   G_OBJECT_CLASS (ephy_shell_parent_class)->dispose (object);
 }
 
@@ -847,6 +855,22 @@ ephy_shell_get_session (EphyShell *shell)
 }
 
 /**
+ * ephy_shell_get_application:
+ * @shell: the EphyShell
+ *
+ * Returns the web application, if in application mode.
+ *
+ * Return value: (transfer none): an #EphyWebApplication
+ **/
+EphyWebApplication *
+ephy_shell_get_application (EphyShell *shell)
+{
+  g_return_val_if_fail (EPHY_IS_SHELL (shell), NULL);
+
+  return shell->priv->application;
+}
+
+/**
  * ephy_shell_get_lockdown:
  * @shell: the #EphyShell
  *
@@ -1048,6 +1072,19 @@ _ephy_shell_create_instance (EphyEmbedShellMode mode)
                                          NULL));
   /* FIXME weak ref */
   g_assert (ephy_shell != NULL);
+}
+
+void
+ephy_shell_set_application (EphyShell *shell,
+                            EphyWebApplication *app)
+{
+  g_return_if_fail (EPHY_IS_SHELL (shell));
+
+  if (shell->priv->application)
+    g_object_unref (shell->priv->application);
+
+  shell->priv->application = app;
+  g_object_ref (app);
 }
 
 /**

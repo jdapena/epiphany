@@ -2164,24 +2164,36 @@ policy_decision_required_cb (WebKitWebView *web_view,
 	if (reason == WEBKIT_WEB_NAVIGATION_REASON_LINK_CLICKED &&
 	    ephy_embed_shell_get_mode (embed_shell) == EPHY_EMBED_SHELL_MODE_APPLICATION)
 	{
-		/* The only thing we allow here is to either navigate
-		 * in the same window and tab to the current domain,
-		 * or launch a new (non app mode) epiphany instance
-		 * for all the other cases. */
-		gboolean return_value;
-		SoupURI *soup_uri = soup_uri_new (uri);
-		SoupURI *current_soup_uri = soup_uri_new (webkit_web_view_get_uri (web_view));
+		gboolean is_app_url;
+		EphyWebApplication *app;
 
-		if (g_str_equal (soup_uri->host, current_soup_uri->host))
+		app = ephy_shell_get_application (ephy_shell_get_default ());
+		
+		if (app != NULL)
 		{
-			return_value = FALSE;
+			is_app_url = ephy_web_application_match_uri (app, webkit_web_view_get_uri (web_view));
 		}
 		else
+		{
+			/* The only thing we allow here is to either navigate
+			 * in the same window and tab to the current domain,
+			 * or launch a new (non app mode) epiphany instance
+			 * for all the other cases. */
+			SoupURI *soup_uri = soup_uri_new (uri);
+			SoupURI *current_soup_uri = soup_uri_new (webkit_web_view_get_uri (web_view));
+			
+			is_app_url = g_str_equal (soup_uri->host, current_soup_uri->host);
+
+			soup_uri_free (soup_uri);
+			soup_uri_free (current_soup_uri);
+
+		}
+
+		if (!is_app_url)
 		{
 			char *command_line;
 			GError *error = NULL;
 
-			return_value = TRUE;
 			/* A gross hack to be able to launch epiphany from within
 			 * Epiphany. Might be a good idea to figure out a better
 			 * solution... */
@@ -2194,14 +2206,10 @@ policy_decision_required_cb (WebKitWebView *web_view,
 				g_debug ("Error opening %s: %s", uri, error->message);
 				g_error_free (error);
 			}
-
 			g_free (command_line);
 		}
 
-		soup_uri_free (soup_uri);
-		soup_uri_free (current_soup_uri);
-
-		return return_value;
+		return !is_app_url;
 	}
 
 	if (reason == WEBKIT_WEB_NAVIGATION_REASON_LINK_CLICKED) {

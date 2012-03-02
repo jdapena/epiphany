@@ -123,6 +123,8 @@ void                ephy_web_application_set_author_url  (EphyWebApplication *ap
 const char *        ephy_web_application_get_origin      (EphyWebApplication *app);
 void                ephy_web_application_set_origin      (EphyWebApplication *app,
                                                           const char *origin);
+gboolean            ephy_web_application_match_uri       (EphyWebApplication *app,
+							  const char *uri);
 const char *        ephy_web_application_get_install_origin (EphyWebApplication *app);
 void                ephy_web_application_set_install_origin (EphyWebApplication *app,
                                                              const char *install_origin);

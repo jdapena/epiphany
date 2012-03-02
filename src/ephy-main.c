@@ -244,6 +244,7 @@ main (int argc,
   guint32 user_time;
   gboolean arbitrary_url;
   EphyShellStartupContext *ctx;
+  EphyWebApplication *app = NULL;
   EphyStartupFlags startup_flags;
   EphyEmbedShellMode mode;
   int status;
@@ -453,53 +454,38 @@ main (int argc,
     mode = EPHY_EMBED_SHELL_MODE_PRIVATE;
   else if (application_mode) {
     char *app_name;
-    char *app_icon;
 
     mode = EPHY_EMBED_SHELL_MODE_APPLICATION;
 
     app_name = g_strrstr (profile_directory, EPHY_WEB_APP_PREFIX);
-    app_icon = g_build_filename (profile_directory, EPHY_WEB_APP_ICON_NAME, NULL);
-
-    if (app_name) {
-      char *metadata_file;
-      char *metadata_file_path;
-      char *contents = NULL;
-
-      gtk_window_set_default_icon_from_file (app_icon, NULL);
+    if (app_name != NULL) {
 
       /* Skip the 'app-' part */
       app_name += strlen (EPHY_WEB_APP_PREFIX);
 
-      metadata_file = g_strconcat (app_name, ".metadata", NULL);
-      metadata_file_path = g_build_filename (profile_directory, metadata_file, NULL);
-
-
-      if (g_file_get_contents (metadata_file_path, &contents, NULL, NULL)) {
-        GKeyFile *key;
-
-        key = g_key_file_new ();
-        g_key_file_load_from_data (key, contents, -1, 0, NULL);
-
-        g_set_prgname (g_key_file_get_string (key, "Application", "Name", NULL));
-        g_set_application_name (g_key_file_get_string (key, "Application", "Name", NULL));
-        gdk_set_program_class (g_key_file_get_string (key, "Application", "Name", NULL));
-
-        g_key_file_free (key);
-
-      } else {
-
-        g_set_prgname (app_name);
-        g_set_application_name (app_name);
-
-        /* We need to re-set this because we have already parsed the
-         * options, which inits GTK+ and sets this as a side effect. */
-        gdk_set_program_class (app_name);
-      }
-      g_free (metadata_file);
-      g_free (metadata_file_path);
+      app = ephy_web_application_from_name (app_name);
     }
 
-    g_free (app_icon);
+    if (app) {
+      char *app_icon;
+
+      app_icon = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_APP_ICON);
+      gtk_window_set_default_icon_from_file (app_icon, NULL);
+
+      g_set_prgname (ephy_web_application_get_name (app));
+      g_set_application_name (ephy_web_application_get_name (app));
+      gdk_set_program_class (ephy_web_application_get_name (app));
+      g_free (app_icon);
+
+    } else {
+      g_set_prgname (app_name);
+      g_set_application_name (app_name);
+
+      /* We need to re-set this because we have already parsed the
+       * options, which inits GTK+ and sets this as a side effect. */
+      gdk_set_program_class (app_name);
+    }
+
   } else {
     mode = EPHY_EMBED_SHELL_MODE_BROWSER;
 
@@ -521,6 +507,12 @@ main (int argc,
                                         user_time);
   g_strfreev (arguments);
   ephy_shell_set_startup_context (ephy_shell, ctx);
+
+  if (mode == EPHY_EMBED_SHELL_MODE_APPLICATION && app) {
+    ephy_shell_set_application (ephy_shell, app);
+    g_object_unref (app);
+  }
+
   status = g_application_run (G_APPLICATION (ephy_shell), argc, argv);
 
   /* Shutdown */

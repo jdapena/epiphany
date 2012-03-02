@@ -254,6 +254,7 @@ EPHY_GIR_H_FILES = \
 	$(top_srcdir)/embed/ephy-embed-shell.h \
 	$(top_srcdir)/embed/ephy-embed-single.h \
 	$(top_srcdir)/embed/ephy-permission-manager.h \
+	$(top_srcdir)/embed/ephy-web-application.h \
 	$(top_srcdir)/embed/ephy-web-view.h \
 	$(top_srcdir)/lib/ephy-dialog.h \
 	$(top_srcdir)/lib/ephy-node-db.h \
@@ -282,6 +283,7 @@ EPHY_GIR_C_FILES = \
 	$(top_srcdir)/embed/ephy-embed-shell.c \
 	$(top_srcdir)/embed/ephy-embed-single.c \
 	$(top_srcdir)/embed/ephy-permission-manager.c \
+	$(top_srcdir)/embed/ephy-web-application.c \
 	$(top_srcdir)/embed/ephy-web-view.c \
 	$(top_srcdir)/lib/ephy-dialog.c \
 	$(top_srcdir)/lib/ephy-node-db.c \

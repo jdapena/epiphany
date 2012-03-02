@@ -337,6 +337,32 @@ ephy_web_application_set_origin (EphyWebApplication *app,
 }
 
 /**
+ * ephy_web_application_match_uri:
+ * @app: an #EphyWebApplication
+ * @uri: a string
+ *
+ * Checks if @uri matches the origin of the app, or the list
+ * of URI's stated as valid.
+ **/
+gboolean
+ephy_web_application_match_uri (EphyWebApplication *app,
+				const char *uri)
+{
+  SoupURI *app_origin, *soup_uri;
+  gboolean is_match = FALSE;
+
+  app_origin = soup_uri_new (app->priv->origin);
+  soup_uri = soup_uri_new (uri);
+
+  is_match = g_str_equal (soup_uri->host, app_origin->host);
+
+  soup_uri_free (soup_uri);
+  soup_uri_free (app_origin);
+
+  return is_match;
+}
+
+/**
  * ephy_web_application_get_install_origin:
  * @app: an #EphyWebApplication
  *
@@ -1119,7 +1145,7 @@ ephy_apps_dot_dir (void)
  *
  * Obtains the list of applications installed and enabled.
  *
- * Returns: a #GList of #EphyWebApplication instances
+ * Returns: (element-type EphyWebApplication*) (transfer full): a #GList of #EphyWebApplication instances
  */
 GList *
 ephy_web_application_get_applications (void)
@@ -1163,6 +1189,14 @@ ephy_web_application_get_applications (void)
   
 }
 
+/**
+ * ephy_web_application_get_applications_from_origin:
+ * @origin: a string
+ *
+ * Obtains the list of applications installed and enabled that match @origin
+ *
+ * Returns: (element-type EphyWebApplication*) (transfer full): a #GList of #EphyWebApplication instances
+ */
 GList *
 ephy_web_application_get_applications_from_origin (const char *origin)
 {
@@ -1186,6 +1220,14 @@ ephy_web_application_get_applications_from_origin (const char *origin)
   return origin_apps;
 }
 
+/**
+ * ephy_web_application_get_applications_from_install_origin:
+ * @install_origin: a string
+ *
+ * Obtains the list of applications installed and enabled that match @install_origin
+ *
+ * Returns: (element-type EphyWebApplication*) (transfer full): a #GList of #EphyWebApplication instances
+ */
 GList *
 ephy_web_application_get_applications_from_install_origin (const char *origin)
 {
@@ -1209,6 +1251,12 @@ ephy_web_application_get_applications_from_install_origin (const char *origin)
   return origin_apps;
 }
 
+/**
+ * ephy_web_application_free_applications_list:
+ * @applications: (element-type EphyWebApplication*): a #GList of #EphyWebApplication
+ *
+ * Frees a list of applications, unreferencing the instances inside.
+ */
 void
 ephy_web_application_free_applications_list (GList *applications)
 {
@@ -1230,6 +1278,14 @@ ephy_web_application_get_profile_dir_from_name (const char *name)
   return profile_dir;
 }
 
+/**
+ * ephy_web_application_from_name:
+ * @name: a string
+ *
+ * Obtains a web application from the application @name
+ *
+ * Returns: (transfer full): an #EphyWebApplication
+ */
 EphyWebApplication *
 ephy_web_application_from_name (const char *name)
 {
