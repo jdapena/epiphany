@@ -31,6 +31,7 @@
 #include <gtk/gtk.h>
 
 #include "ephy-download.h"
+#include "ephy-web-application.h"
 
 G_BEGIN_DECLS
 
@@ -108,6 +109,9 @@ void		   ephy_embed_shell_remove_download	(EphyEmbedShell *shell,
 
 EphyEmbedShellMode ephy_embed_shell_get_mode            (EphyEmbedShell *shell);
 
+EphyWebApplication *ephy_embed_shell_get_application    (EphyEmbedShell *shell);
+void               ephy_embed_shell_set_application     (EphyEmbedShell *shell,
+							 EphyWebApplication *app);
 G_END_DECLS
 
 #endif /* !EPHY_EMBED_SHELL_H */

@@ -12,6 +12,7 @@ NOINST_H_FILES = \
 	ephy-embed-private.h		\
 	ephy-encodings.h		\
 	ephy-request-about.h		\
+	ephy-request-chrome-extension.h	\
 	ephy-web-app-utils.h
 
 INST_H_FILES = \
@@ -50,6 +51,7 @@ libephyembed_la_SOURCES = \
 	ephy-js-utils.c			\
 	ephy-permission-manager.c	\
 	ephy-request-about.c		\
+	ephy-request-chrome-extension.c	\
 	ephy-embed-prefs.c		\
 	ephy-web-app-utils.c		\
 	ephy-web-application.c		\

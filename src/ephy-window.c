@@ -2167,7 +2167,7 @@ policy_decision_required_cb (WebKitWebView *web_view,
 		gboolean is_app_url;
 		EphyWebApplication *app;
 
-		app = ephy_shell_get_application (ephy_shell_get_default ());
+		app = ephy_embed_shell_get_application (ephy_embed_shell_get_default ());
 		
 		if (app != NULL)
 		{

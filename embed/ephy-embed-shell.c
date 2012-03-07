@@ -57,6 +57,7 @@ struct _EphyEmbedShellPrivate
 	GtkPageSetup *page_setup;
 	GtkPrintSettings *print_settings;
 	EphyEmbedShellMode mode;
+	EphyWebApplication *application;
 	guint single_initialised : 1;
 };
 
@@ -109,6 +110,12 @@ ephy_embed_shell_dispose (GObject *object)
 	{
 		g_object_unref (priv->print_settings);
 		priv->print_settings = NULL;
+	}
+
+	if (priv->application != NULL)
+	{
+		g_object_unref (priv->application);
+		priv->application = NULL;
 	}
 
 	G_OBJECT_CLASS (ephy_embed_shell_parent_class)->dispose (object);
@@ -634,3 +641,33 @@ ephy_embed_shell_get_mode (EphyEmbedShell *shell)
 	
 	return shell->priv->mode;
 }
+
+void
+ephy_embed_shell_set_application (EphyEmbedShell *shell,
+				  EphyWebApplication *app)
+{
+	g_return_if_fail (EPHY_IS_EMBED_SHELL (shell));
+
+	if (shell->priv->application)
+		g_object_unref (shell->priv->application);
+
+	shell->priv->application = app;
+	g_object_ref (app);
+}
+
+/**
+ * ephy_embed_shell_get_application:
+ * @shell: the EphyEmbedShell
+ *
+ * Returns the web application, if in application mode.
+ *
+ * Return value: (transfer none): an #EphyWebApplication
+ **/
+EphyWebApplication *
+ephy_embed_shell_get_application (EphyEmbedShell *shell)
+{
+	g_return_val_if_fail (EPHY_IS_EMBED_SHELL (shell), NULL);
+
+	return shell->priv->application;
+}
+

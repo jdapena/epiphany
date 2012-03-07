@@ -36,6 +36,7 @@
 #include "ephy-prefs.h"
 #include "ephy-settings.h"
 #include "ephy-request-about.h"
+#include "ephy-request-chrome-extension.h"
 
 #include <webkit/webkit.h>
 #include <glib/gi18n.h>
@@ -398,6 +399,7 @@ ephy_embed_single_initialize (EphyEmbedSingle *single)
   requester = SOUP_SESSION_FEATURE (soup_requester_new());
   soup_session_add_feature (session, requester);
   soup_session_feature_add_feature (requester, EPHY_TYPE_REQUEST_ABOUT);
+  soup_session_feature_add_feature (requester, EPHY_TYPE_REQUEST_CHROME_EXTENSION);
   g_object_unref (requester);
 
 #ifdef SOUP_TYPE_PASSWORD_MANAGER

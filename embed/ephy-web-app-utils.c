@@ -1934,6 +1934,7 @@ static gboolean
 parse_crx_manifest (const char *manifest_data,
                     char **name,
                     char **web_url,
+                    char **local_path,
                     char **description,
                     char **update_url,
                     char **best_icon_path,
@@ -1942,6 +1943,7 @@ parse_crx_manifest (const char *manifest_data,
   JsonParser *parser;
   char *_name = NULL;
   char *_web_url = NULL;
+  char *_local_path = NULL;
   char *_description = NULL;
   char *_update_url = NULL;
   char *_best_icon_path = NULL;
@@ -1960,9 +1962,10 @@ parse_crx_manifest (const char *manifest_data,
 
     if (_error == NULL) {
       _web_url = ephy_json_path_query_string ("$.app.launch.web_url", root_node);
-      if (_web_url == NULL)
+      _local_path = ephy_json_path_query_string ("$.app.launch.local_path", root_node);
+      if (_web_url == NULL && _local_path == NULL)
         g_set_error (&_error, ERROR_QUARK,
-                     EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, _("No web url on manifest."));
+                     EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, _("No launch url or path on manifest."));
     }
       
     if (_error == NULL) {
@@ -1988,6 +1991,11 @@ parse_crx_manifest (const char *manifest_data,
     *web_url = _web_url;
   else
     g_free (_web_url);
+
+  if (local_path)
+    *local_path = _local_path;
+  else
+    g_free (_local_path);
 
   if (update_url)
     *update_url = _update_url;
@@ -2036,17 +2044,34 @@ on_crx_extract (GObject *object,
         char *name = NULL;
         char *description = NULL;
         char *web_url = NULL;
+        char *local_path = NULL;
         char *best_icon_path = NULL;
-        is_ok = parse_crx_manifest (install_data->manifest_data, &name, &web_url, &description, NULL, &best_icon_path, &error);
+        is_ok = parse_crx_manifest (install_data->manifest_data, &name, &web_url, &local_path, &description, NULL, &best_icon_path, &error);
         if (is_ok) {
           ephy_web_application_set_name (install_data->app, name);
           ephy_web_application_set_description (install_data->app, description);
-          ephy_web_application_set_full_uri (install_data->app, web_url);
+          if (local_path && 
+              ephy_web_application_get_custom_key (install_data->app,
+                                                   EPHY_WEB_APPLICATION_CHROME_ID)) {
+            char *origin;
+
+            origin = g_strconcat ("chrome-extension://",
+                                  ephy_web_application_get_custom_key (install_data->app,
+                                                                       EPHY_WEB_APPLICATION_CHROME_ID),
+                                  "/",
+                                  NULL);
+            ephy_web_application_set_origin (install_data->app, origin);
+            g_free (origin);
+            ephy_web_application_set_launch_path (install_data->app, local_path);
+          } else {
+            ephy_web_application_set_full_uri (install_data->app, web_url);
+          }
           install_data->best_icon_path = best_icon_path;
         }
         g_free (name);
         g_free (description);
         g_free (web_url);
+        g_free (local_path);
       }
     }
 
@@ -2307,6 +2332,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   char *icon_data = NULL;
   char *localized_name = NULL;
   char *web_url = NULL;
+  char *local_path = NULL;
   char *update_url = NULL;
   char *best_icon_path = NULL;
   JSObjectRef callback_function = NULL;
@@ -2341,7 +2367,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (*exception == NULL) {
       manifest = ephy_js_string_to_utf8 (manifest_string);
 
-      parse_crx_manifest (manifest, &name, &web_url, &description, &update_url, &best_icon_path, NULL);
+      parse_crx_manifest (manifest, &name, &web_url, &local_path, &description, &update_url, &best_icon_path, NULL);
     }
   }
 
@@ -2381,7 +2407,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     default_locale = ephy_js_string_to_utf8 (default_locale_string);
   }
 
-  if (name && manifest && web_url) {
+  if (name && manifest && (web_url || (local_path && id))) {
     EphyWebApplication *app;
     char *used_icon_url = NULL;
     GdkPixbuf *icon_pixbuf = NULL;
@@ -2391,7 +2417,19 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
 
     ephy_web_application_set_name (app, localized_name?localized_name:name);
     if (description) ephy_web_application_set_description (app, description);
-    ephy_web_application_set_full_uri (app, web_url);
+    if (local_path && id) {
+      char *origin;
+
+      origin = g_strconcat ("chrome-extension://",
+                            id,
+                            "/",
+                            NULL);
+      ephy_web_application_set_origin (app, origin);
+      g_free (origin);
+      ephy_web_application_set_launch_path (app, local_path);
+    } else {
+      ephy_web_application_set_full_uri (app, web_url);
+    }
 
     ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
 
@@ -2502,6 +2540,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   g_free (icon_data);
   g_free (localized_name);
   g_free (web_url);
+  g_free (local_path);
   g_free (best_icon_path);
   if (*exception) return JSValueMakeNull (context);
   return JSValueMakeUndefined (context);

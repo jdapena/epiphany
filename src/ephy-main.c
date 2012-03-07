@@ -458,15 +458,8 @@ main (int argc,
     mode = EPHY_EMBED_SHELL_MODE_APPLICATION;
 
     app_name = g_strrstr (profile_directory, EPHY_WEB_APP_PREFIX);
-    if (app_name != NULL) {
-
-      /* Skip the 'app-' part */
-      app_name += strlen (EPHY_WEB_APP_PREFIX);
-
-      app = ephy_web_application_from_name (app_name);
-    }
-
-    if (app) {
+    app = ephy_web_application_new ();
+    if (ephy_web_application_load (app, profile_directory, NULL)) {
       char *app_icon;
 
       app_icon = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_APP_ICON);
@@ -478,6 +471,15 @@ main (int argc,
       g_free (app_icon);
 
     } else {
+      g_object_unref (app);
+      app = NULL;
+      if (app_name) {
+        
+      /* Skip the 'app-' part */
+      app_name += strlen (EPHY_WEB_APP_PREFIX);
+
+      }
+
       g_set_prgname (app_name);
       g_set_application_name (app_name);
 
@@ -509,7 +511,7 @@ main (int argc,
   ephy_shell_set_startup_context (ephy_shell, ctx);
 
   if (mode == EPHY_EMBED_SHELL_MODE_APPLICATION && app) {
-    ephy_shell_set_application (ephy_shell, app);
+    ephy_embed_shell_set_application (EPHY_EMBED_SHELL (ephy_shell), app);
     g_object_unref (app);
   }
 
