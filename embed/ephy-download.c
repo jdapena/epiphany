@@ -928,8 +928,8 @@ download_status_changed_cb (GObject *object,
       const char *content_type = soup_message_headers_get_content_type (message->response_headers, NULL);
 
       if (content_type && 
-          ((!strcmp (content_type, "application/x-web-app-manifest+json")) ||
-           (!strcmp (content_type, "application/x-chrome-extension")))) {
+          ((!strcmp (content_type, "application/x-web-app-manifest+json") && g_settings_get_boolean (EPHY_SETTINGS_WEB, EPHY_PREFS_WEB_ENABLE_OPEN_WEB_APPS)) ||
+           (!strcmp (content_type, "application/x-chrome-extension") && g_settings_get_boolean (EPHY_SETTINGS_WEB, EPHY_PREFS_WEB_ENABLE_CHROME_APPS)))) {
         // We need the host for knowing the install origin
         SoupURI *uri, *origin_uri;
         char *origin;
