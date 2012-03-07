@@ -184,6 +184,11 @@
 			<summary>Enable Open Web Apps support (experimental)</summary>
 			<description>Enable experimental support for Mozilla Open Web Apps 2011 tech preview</description>
 		</key>
+		<key type="b" name="enable-chrome-apps">
+		        <default>false</default>
+			<summary>Enable Chrome Webstore and no-crx apps support (experimental)</summary>
+			<description>Enable experimental support for Chrome Webstore hosted and packaged apps, and for Chrome no-CRX apps.</description>
+		</key>
 	</schema>
 	<schema path="/org/gnome/epiphany/state/" id="org.gnome.Epiphany.state">
 		<key type="s" name="open-dir">

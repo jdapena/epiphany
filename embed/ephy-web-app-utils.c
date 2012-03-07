@@ -3128,6 +3128,10 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   JSValueRef on_installed_value;
   JSValueRef on_uninstalled_value;
 
+  if (!g_settings_get_boolean (EPHY_SETTINGS_WEB,
+                               EPHY_PREFS_WEB_ENABLE_CHROME_APPS))
+    return;
+
   global_obj = JSContextGetGlobalObject(context);
 
   chrome_obj = JSObjectMake (context, NULL, NULL);
