@@ -26,6 +26,7 @@
 #include "ephy-embed-utils.h"
 #include "ephy-file-helpers.h"
 #include "ephy-js-utils.h"
+#include "ephy-settings.h"
 #include "ephy-web-application.h"
 
 #include <archive.h>
@@ -1093,6 +1094,10 @@ ephy_web_application_setup_mozilla_api (JSGlobalContextRef context)
   JSValueRef navigatorRef;
   JSObjectRef navigatorObj;
   JSValueRef exception = NULL;
+
+  if (!g_settings_get_boolean (EPHY_SETTINGS_WEB,
+                               EPHY_PREFS_WEB_ENABLE_OPEN_WEB_APPS))
+    return;
 
   globalObj = JSContextGetGlobalObject(context);
   navigatorRef = ephy_js_object_get_property (context, globalObj, "navigator", &exception);

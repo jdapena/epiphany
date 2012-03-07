@@ -179,6 +179,11 @@
 			<summary>Enable WebGL</summary>
 			<description>Whether to enable support for WebGL contexts.</description>
 		</key>
+		<key type="b" name="enable-open-web-apps">
+		        <default>false</default>
+			<summary>Enable Open Web Apps support (experimental)</summary>
+			<description>Enable experimental support for Mozilla Open Web Apps 2011 tech preview</description>
+		</key>
 	</schema>
 	<schema path="/org/gnome/epiphany/state/" id="org.gnome.Epiphany.state">
 		<key type="s" name="open-dir">
