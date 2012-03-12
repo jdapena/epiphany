@@ -1784,6 +1784,77 @@ geolocation_policy_decision_requested_cb (WebKitWebView *web_view,
 }
 
 static void
+decide_on_register_protocol_handler (GtkWidget *info_bar,
+                                     int response,
+                                     gpointer userdata)
+{
+  gtk_widget_destroy (info_bar);
+}
+
+static gboolean
+register_protocol_handler_cb (WebKitWebView *web_view,
+                              const char *scheme,
+                              const char *base_url,
+                              const char *url,
+                              const char *title,
+                              gpointer data)
+{
+  GtkWidget *info_bar;
+  GtkWidget *action_area;
+  GtkWidget *button_box;
+  GtkWidget *button;
+  GtkWidget *content_area;
+  GtkWidget *label;
+  char *message;
+
+  info_bar = gtk_info_bar_new ();
+
+  /* Buttons */
+  action_area = gtk_info_bar_get_action_area (GTK_INFO_BAR (info_bar));
+
+  button_box = gtk_button_box_new (GTK_ORIENTATION_HORIZONTAL);
+  gtk_container_add (GTK_CONTAINER (action_area), button_box);
+
+  /* Translators: protocol handler request for a specific site. */
+  button = gtk_button_new_with_label (_("Deny"));
+  gtk_box_pack_start (GTK_BOX (button_box), button, FALSE, FALSE, 0);
+  g_signal_connect (button, "clicked",
+                    G_CALLBACK (send_no_response_cb), info_bar);
+
+  /* Translators: protocol handler request for a specific site. */
+  button = gtk_button_new_with_label (_("Allow"));
+  gtk_box_pack_start (GTK_BOX (button_box), button, FALSE, FALSE, 0);
+  g_signal_connect (button, "clicked",
+                    G_CALLBACK (send_yes_response_cb), info_bar);
+
+  /* Label */
+  message = g_markup_printf_escaped (_("<b>%s</b> wants to handle the protocol <b>%s</b> using <i>%s %s</i>"),
+                                     title,
+                                     scheme,
+                                     base_url,
+                                     url);
+
+  label = gtk_label_new (message);
+  g_object_set (label, "use-markup", TRUE, "wrap", TRUE, NULL);
+
+  g_free (message);
+
+  content_area = gtk_info_bar_get_content_area (GTK_INFO_BAR (info_bar));
+  gtk_container_add (GTK_CONTAINER (content_area), label);
+
+  gtk_widget_show_all (info_bar);
+
+  g_signal_connect (info_bar, "response",
+                    G_CALLBACK (decide_on_register_protocol_handler),
+                    NULL);
+
+  ephy_embed_add_top_widget (EPHY_GET_EMBED_FROM_EPHY_WEB_VIEW (web_view),
+                             info_bar, TRUE);
+
+  return TRUE;
+}
+
+static void
 update_navigation_flags (EphyWebView *view)
 {
   EphyWebViewPrivate *priv = view->priv;
@@ -2223,6 +2294,10 @@ ephy_web_view_init (EphyWebView *web_view)
 
   g_signal_connect (web_view, "geolocation-policy-decision-requested",
                     G_CALLBACK (geolocation_policy_decision_requested_cb),
+                    NULL);
+
+  g_signal_connect (web_view, "register-protocol-handler",
+                    G_CALLBACK (register_protocol_handler_cb),
                     NULL);
 
   g_signal_connect (web_view, "notify::load-status",
