@@ -2,6 +2,9 @@ SUBDIRS = bookmarks
 
 NULL =
 
+ccpaneldir = $(CCPANELDIR)
+ccpanel_LTLIBRARIES = libepiphany-applications.la
+
 noinst_LTLIBRARIES = libephymain.la
 
 bin_PROGRAMS = epiphany
@@ -152,6 +155,35 @@ epiphany_LDADD = \
 	$(top_builddir)/lib/egg/libegg.la \
 	$(DEPENDENCIES_LIBS) \
 	$(LIBINTL)
+
+libepiphany_applications_la_SOURCES =\
+	ephy-cc-applications.c
+libepiphany_applications_la_CPPFLAGS = \
+	-I$(top_builddir)/lib		\
+	-I$(top_srcdir)/embed 		\
+	-I$(top_srcdir)/lib   		\
+	-I$(top_srcdir)/lib/egg		\
+	-I$(top_srcdir)/src/bookmarks   \
+	-DDATADIR=\""$(datadir)"\" 	\
+	-DGNOMELOCALEDIR=\"$(datadir)/locale\"	\
+	$(INCINTL)			\
+	$(AM_CPPFLAGS)
+libepiphany_applications_la_CFLAGS = \
+	$(DEPENDENCIES_CFLAGS) 	\
+	$(AM_CFLAGS)
+libepiphany_applications_la_LIBADD = \
+	libephymain.la \
+	$(top_builddir)/src/bookmarks/libephybookmarks.la \
+	$(top_builddir)/embed/libephyembed.la \
+	$(top_builddir)/lib/widgets/libephywidgets.la \
+	$(top_builddir)/lib/history/libephyhistory.la \
+	$(top_builddir)/lib/libephymisc.la \
+	$(top_builddir)/lib/egg/libegg.la \
+	$(DEPENDENCIES_LIBS) \
+	$(LIBINTL)
+libepiphany_applications_la_LDFLAGS = \
+	-module -avoid-version
+
 
 if HAVE_INTROSPECTION
 epiphany_CFLAGS += $(INTROSPECTION_CFLAGS)

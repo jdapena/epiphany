@@ -1,0 +1,15 @@
+[Desktop Entry]
+Version=1.0
+
+_Name=Web Applications
+_Comment=Manage your installed web applications
+
+Icon=web-browser
+TryExec=gnome-control-center
+Exec=gnome-control-center epiphany-applications
+
+StartupNotify=true
+
+Type=Application
+Categories=GNOME;GTK;Utility;DesktopSettings;Settings;X-GNOME-SystemSettings;X-GNOME-Settings-Panel;
+X-GNOME-Settings-Panel=epiphany-applications

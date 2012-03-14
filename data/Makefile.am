@@ -3,7 +3,7 @@ SUBDIRS = pages ui
 @INTLTOOL_SERVER_RULE@
 @INTLTOOL_DESKTOP_RULE@
 
-desktop_in_files = epiphany.desktop.in.in
+desktop_in_files = epiphany.desktop.in.in epiphany-applications-preferences.desktop.in.in
 desktopdir = $(datadir)/applications
 desktop_DATA = $(desktop_in_files:.desktop.in.in=.desktop)
 

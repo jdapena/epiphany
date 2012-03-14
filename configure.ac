@@ -92,6 +92,7 @@ LIBSOUP_GNOME_REQUIRED=2.37.1
 GNOME_KEYRING_REQUIRED=2.26.0
 GSETTINGS_DESKTOP_SCHEMAS_REQUIRED=0.0.1
 LIBNOTIFY_REQUIRED=0.5.1
+LIBGNOME_CONTROL_CENTER_REQUIRED=3.3.91
 
 # Tests
 
@@ -120,6 +121,7 @@ PKG_CHECK_MODULES([DEPENDENCIES], [
 		  gnome-keyring-1 >= $GNOME_KEYRING_REQUIRED
 		  gsettings-desktop-schemas >= $GSETTINGS_DESKTOP_SCHEMAS_REQUIRED
 		  libnotify >= $LIBNOTIFY_REQUIRED
+		  libgnome-control-center >= $LIBGNOME_CONTROL_CENTER_REQUIRED
 		  sqlite3
 		  ])
 
@@ -143,6 +145,13 @@ AC_TYPE_SIZE_T
 AC_CHECK_HEADERS([X11/XF86keysym.h])
 
 EPIPHANY_FEATURES=
+
+# *******************
+# Control center path
+# *******************
+
+CCPANELDIR="${libdir}/control-center-1/panels/"
+AC_SUBST(CCPANELDIR)
 
 # *********************
 # GObject Introspection
@@ -324,6 +333,7 @@ Makefile
 data/Makefile
 data/epiphany-${EPIPHANY_API_VERSION}.pc:data/epiphany.pc.in
 data/epiphany.desktop.in
+data/epiphany-applications-preferences.desktop.in
 data/pages/Makefile
 data/ui/Makefile
 doc/Makefile
@@ -354,6 +364,7 @@ Epiphany was configured with the following options:
 	Source code location       : $srcdir
 	Compiler                   : $CC
 	Prefix                     : $prefix
+	Control Center Panel Dir   : $CCPANELDIR
 	Extra debugging support    : $enable_debug
 
  	Zeroconf bookmarks support : $enable_zeroconf
