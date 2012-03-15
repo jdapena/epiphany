@@ -3651,6 +3651,8 @@ ephy_window_constructor (GType type,
 
 	action = gtk_action_group_get_action (priv->toolbar_action_group, "NavigationOpenInBrowser");
 	gtk_action_set_visible (action, mode == EPHY_EMBED_SHELL_MODE_APPLICATION);
+	action = gtk_action_group_get_action (priv->toolbar_action_group, "PageMenu");
+	gtk_action_set_visible (action, mode != EPHY_EMBED_SHELL_MODE_APPLICATION);
 	if (mode == EPHY_EMBED_SHELL_MODE_APPLICATION)
 	{
 		/* FileNewTab and FileNewWindow are sort of special. */
