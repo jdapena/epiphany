@@ -716,6 +716,40 @@ ephy_file_check_mime (const char *mime_type)
 }
 
 /**
+ * ephy_file_launch_in_browser:
+ * @uri: a URI
+ *
+ * Launch @uri in default system browser.
+ *
+ * Returns: %TRUE if successful, %FALSE otherwise
+ */
+gboolean
+ephy_file_launch_in_browser (const char *uri)
+{
+	char *command_line;
+	GError *error = NULL;
+	gboolean return_value = TRUE;
+
+	/* A gross hack to be able to launch epiphany from within
+	 * Epiphany. Might be a good idea to figure out a better
+	 * solution... */
+	g_unsetenv (EPHY_UUID_ENVVAR);
+	command_line = g_strdup_printf ("gvfs-open %s", uri);
+	g_spawn_command_line_async (command_line, &error);
+
+	if (error)
+	{
+		g_debug ("Error opening %s: %s", uri, error->message);
+		g_error_free (error);
+		return_value = FALSE;
+	}
+
+	g_free (command_line);
+
+	return return_value;
+}
+
+/**
  * ephy_file_launch_application:
  * @app: the application to launch
  * @files: files to pass to @app

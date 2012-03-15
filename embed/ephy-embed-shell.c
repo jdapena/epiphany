@@ -57,6 +57,7 @@ struct _EphyEmbedShellPrivate
 	GtkPageSetup *page_setup;
 	GtkPrintSettings *print_settings;
 	EphyEmbedShellMode mode;
+	char *app_mode_origin;
 	guint single_initialised : 1;
 };
 
@@ -74,6 +75,7 @@ enum
 {
 	PROP_0,
 	PROP_MODE,
+	PROP_APP_MODE_ORIGIN,
 	N_PROPERTIES
 };
 
@@ -269,6 +271,11 @@ ephy_embed_shell_set_property (GObject *object,
   case PROP_MODE:
 	  embed_shell->priv->mode = g_value_get_enum (value);
 	  break;
+  case PROP_APP_MODE_ORIGIN:
+	  if (embed_shell->priv->app_mode_origin)
+		  g_free (embed_shell->priv->app_mode_origin);
+	  embed_shell->priv->app_mode_origin = g_value_dup_string (value);
+	  break;
   default:
 	  G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
   }
@@ -287,6 +294,9 @@ ephy_embed_shell_get_property (GObject *object,
   case PROP_MODE:
 	  g_value_set_enum (value, embed_shell->priv->mode);
 	  break;
+  case PROP_APP_MODE_ORIGIN:
+	  g_value_set_string (value, embed_shell->priv->app_mode_origin);
+	  break;
   default:
 	  G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
   }
@@ -302,6 +312,7 @@ ephy_embed_shell_init (EphyEmbedShell *shell)
 	embed_shell = shell;
 
 	shell->priv->downloads = NULL;
+	shell->priv->app_mode_origin = NULL;
 }
 
 static void
@@ -324,6 +335,14 @@ ephy_embed_shell_class_init (EphyEmbedShellClass *klass)
 				   EPHY_EMBED_SHELL_MODE_BROWSER,
 				   G_PARAM_READWRITE | G_PARAM_STATIC_NAME | G_PARAM_STATIC_NICK |
 				   G_PARAM_STATIC_BLURB | G_PARAM_CONSTRUCT_ONLY);
+	
+	object_properties[PROP_APP_MODE_ORIGIN] =
+		g_param_spec_string ("app-mode-origin",
+				     "Application mode origin",
+				     "The origin for the application mode .",
+				     NULL,
+				     G_PARAM_READWRITE | G_PARAM_STATIC_NAME | G_PARAM_STATIC_NICK |
+				     G_PARAM_STATIC_BLURB | G_PARAM_CONSTRUCT_ONLY);
 	
 	g_object_class_install_properties (object_class,
 					   N_PROPERTIES,
@@ -633,4 +652,18 @@ ephy_embed_shell_get_mode (EphyEmbedShell *shell)
 	g_return_val_if_fail (EPHY_IS_EMBED_SHELL (shell), EPHY_EMBED_SHELL_MODE_BROWSER);
 	
 	return shell->priv->mode;
+}
+
+/**
+ * ephy_embed_shell_get_app_mode_origin:
+ * @shell: an #EphyEmbedShell
+ * 
+ * Returns: the origin for app mode if it is set
+ **/
+const char *
+ephy_embed_shell_get_app_mode_origin (EphyEmbedShell *shell)
+{
+	g_return_val_if_fail (EPHY_IS_EMBED_SHELL (shell), NULL);
+	
+	return shell->priv->app_mode_origin;
 }

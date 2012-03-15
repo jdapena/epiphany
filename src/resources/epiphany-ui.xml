@@ -42,6 +42,7 @@
 		<menuitem name="OpenLinkLP" action="OpenLink"/>
 		<menuitem name="OpenLinkInNewTabLP" action="OpenLinkInNewTab"/>
 		<menuitem name="OpenLinkInNewWindowLP" action="OpenLinkInNewWindow"/>
+		<menuitem name="OpenLinkInBrowserLP" action="OpenLinkInBrowser"/>
 		<separator name="LPSep1"/>
 		<menuitem name="EditCopyLP" action="EditCopy"/>
 		<separator name="LPSep2"/>

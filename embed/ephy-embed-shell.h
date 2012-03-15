@@ -108,6 +108,7 @@ void		   ephy_embed_shell_remove_download	(EphyEmbedShell *shell,
 							 EphyDownload *download);
 
 EphyEmbedShellMode ephy_embed_shell_get_mode            (EphyEmbedShell *shell);
+const char *       ephy_embed_shell_get_app_mode_origin (EphyEmbedShell *shell);
 
 G_END_DECLS
 

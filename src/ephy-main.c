@@ -245,6 +245,7 @@ main (int argc,
   EphyShellStartupContext *ctx;
   EphyStartupFlags startup_flags;
   EphyEmbedShellMode mode;
+  char *app_mode_origin;
   int status;
   EphyFileHelpersFlags flags;
 
@@ -381,6 +382,16 @@ main (int argc,
     exit (1);
   }
 
+  if (application_mode && arguments == NULL) {
+    g_print ("URL should be provided when --application-mode is requested\n");
+    exit (1);
+  }
+
+  if (application_mode && arguments[0] != NULL && arguments[1] != NULL) {
+    g_print ("Only one URL should be provided when --application-mode is requested\n");
+    exit (1);
+  }
+
   if (application_mode && !g_file_test (profile_directory, G_FILE_TEST_IS_DIR)) {
       g_print ("--profile must be an existing directory when --application-mode is requested\n");
       exit (1);
@@ -442,12 +453,15 @@ main (int argc,
     exit (0);
   }
 
+  app_mode_origin = NULL;
+
   /* Now create the shell */
   if (private_instance)
     mode = EPHY_EMBED_SHELL_MODE_PRIVATE;
   else if (application_mode) {
     char *app_name;
     char *app_icon;
+    SoupURI *soup_uri;
 
     mode = EPHY_EMBED_SHELL_MODE_APPLICATION;
 
@@ -469,6 +483,10 @@ main (int argc,
     }
 
     g_free (app_icon);
+
+    soup_uri = soup_uri_new (arguments[0]);
+    app_mode_origin = g_strdup (soup_uri->host);
+    soup_uri_free (soup_uri);
   } else {
     mode = EPHY_EMBED_SHELL_MODE_BROWSER;
 
@@ -479,7 +497,8 @@ main (int argc,
   }
 
   ephy_embed_prefs_init ();
-  _ephy_shell_create_instance (mode);
+  _ephy_shell_create_instance (mode, app_mode_origin);
+  g_free (app_mode_origin);
 
   startup_flags = get_startup_flags ();
   ctx = ephy_shell_startup_context_new (startup_flags,

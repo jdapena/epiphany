@@ -72,6 +72,7 @@ gboolean           ephy_file_switch_temp_file    (GFile       *file_dest,
                                                   GFile       *file_temp);
 void               ephy_file_delete_on_exit      (GFile       *file);
 EphyMimePermission ephy_file_check_mime          (const char  *mime_type);
+gboolean           ephy_file_launch_in_browser   (const char *uri);
 gboolean           ephy_file_launch_desktop_file (const char  *filename,
                                                   const char  *parameter,
                                                   guint32      user_time,

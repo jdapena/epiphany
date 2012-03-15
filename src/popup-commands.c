@@ -90,6 +90,22 @@ popup_cmd_link_in_new_tab (GtkAction *action,
 }
 
 void
+popup_cmd_link_in_browser (GtkAction *action,
+		           EphyWindow *window)
+{
+	EphyEmbedEvent *event;
+	GValue value = { 0, };
+
+	event = ephy_window_get_context_event (window);
+	g_return_if_fail (event != NULL);
+
+	ephy_embed_event_get_property (event, "link-uri", &value);
+
+	ephy_file_launch_in_browser (g_value_get_string (&value));
+	g_value_unset (&value);
+}
+
+void
 popup_cmd_bookmark_link (GtkAction *action,
 			 EphyWindow *window)
 {

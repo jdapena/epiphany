@@ -1514,3 +1514,17 @@ window_cmd_browse_with_caret (GtkAction *action,
 	g_settings_set_boolean (EPHY_SETTINGS_MAIN,
 				EPHY_PREFS_ENABLE_CARET_BROWSING, active);
 }
+
+void
+window_cmd_open_in_browser (GtkAction *action,
+			    EphyWindow *window)
+{
+	const char *location;
+
+	location = ephy_window_get_location (window);
+
+	if (location)
+	{
+		ephy_file_launch_in_browser (location);
+	}
+}

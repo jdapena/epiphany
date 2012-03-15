@@ -173,6 +173,7 @@ static const GtkActionEntry ephy_menu_entries [] = {
 	  G_CALLBACK (window_cmd_tabs_move_right) },
         { "TabsDetach", NULL, N_("_Detach Tab"), NULL, NULL,
           G_CALLBACK (window_cmd_tabs_detach) },
+
 };
 
 static const GtkToggleActionEntry ephy_menu_toggle_entries [] =
@@ -209,6 +210,8 @@ static const GtkActionEntry ephy_popups_entries [] = {
 	  G_CALLBACK (popup_cmd_link_in_new_window) },
 	{ "OpenLinkInNewTab", NULL, N_("Open Link in New _Tab"), NULL, NULL,
 	  G_CALLBACK (popup_cmd_link_in_new_tab) },
+	{ "OpenLinkInBrowser", NULL, N_("Open Link in _Browser"), NULL, NULL,
+	  G_CALLBACK (popup_cmd_link_in_browser) },
 	{ "DownloadLink", NULL, N_("_Download Link"), NULL,
 	  NULL, G_CALLBACK (popup_cmd_download_link) },
 	{ "DownloadLinkAs", NULL, N_("_Save Link As…"), NULL, NULL,
@@ -677,7 +680,24 @@ get_chromes_visibility (EphyWindow *window,
 
 	if (ephy_embed_shell_get_mode (embed_shell) == EPHY_EMBED_SHELL_MODE_APPLICATION)
 	{
-		*show_toolbar = FALSE;
+		EphyEmbed *embed;
+		const char *address;
+		SoupURI *soup_uri;
+
+		embed = window->priv->active_embed;
+		if (embed) {
+			EphyWebView *web_view;
+
+			web_view = ephy_embed_get_web_view (embed);
+			address = ephy_web_view_get_address (web_view);
+			
+			soup_uri = soup_uri_new (address);
+			*show_toolbar = (g_strcmp0 (soup_uri->host, ephy_embed_shell_get_app_mode_origin (embed_shell)) != 0);
+			soup_uri_free (soup_uri);
+		} else {
+			*show_toolbar = FALSE;
+		}
+
 		*show_tabsbar = FALSE;
 	}
 	else
@@ -1409,6 +1429,18 @@ setup_ui_manager (EphyWindow *window)
 	g_object_unref (action);
 
 	action =
+		g_object_new (EPHY_TYPE_WINDOW_ACTION,
+			      "name", "NavigationOpenInBrowser",
+			      "window", window,
+			      NULL);
+	g_signal_connect (G_OBJECT (action),
+			  "activate",
+			  G_CALLBACK (window_cmd_open_in_browser),
+			  window);
+	gtk_action_group_add_action (action_group, action);
+	g_object_unref (action);
+
+	action =
 		g_object_new (EPHY_TYPE_ZOOM_ACTION,
 			      "name", "Zoom",
 			      "label", _("Zoom"),
@@ -1465,6 +1497,7 @@ sync_tab_address (EphyWebView *view,
 
 	ephy_window_set_location (window, typed_address ? typed_address : address);
 	ephy_find_toolbar_request_close (priv->find_toolbar);
+	sync_chromes_visibility (window);
 }
 
 static void
@@ -2411,49 +2444,6 @@ policy_decision_required_cb (WebKitWebView *web_view,
 		webkit_web_policy_decision_ignore (decision);
 
 		return TRUE;
-	}
-
-	if (reason == WEBKIT_WEB_NAVIGATION_REASON_LINK_CLICKED &&
-	    ephy_embed_shell_get_mode (embed_shell) == EPHY_EMBED_SHELL_MODE_APPLICATION)
-	{
-		/* The only thing we allow here is to either navigate
-		 * in the same window and tab to the current domain,
-		 * or launch a new (non app mode) epiphany instance
-		 * for all the other cases. */
-		gboolean return_value;
-		SoupURI *soup_uri = soup_uri_new (uri);
-		SoupURI *current_soup_uri = soup_uri_new (webkit_web_view_get_uri (web_view));
-
-		if (g_str_equal (soup_uri->host, current_soup_uri->host))
-		{
-			return_value = FALSE;
-		}
-		else
-		{
-			char *command_line;
-			GError *error = NULL;
-
-			return_value = TRUE;
-			/* A gross hack to be able to launch epiphany from within
-			 * Epiphany. Might be a good idea to figure out a better
-			 * solution... */
-			g_unsetenv (EPHY_UUID_ENVVAR);
-			command_line = g_strdup_printf ("gvfs-open %s", uri);
-			g_spawn_command_line_async (command_line, &error);
-
-			if (error)
-			{
-				g_debug ("Error opening %s: %s", uri, error->message);
-				g_error_free (error);
-			}
-
-			g_free (command_line);
-		}
-
-		soup_uri_free (soup_uri);
-		soup_uri_free (current_soup_uri);
-
-		return return_value;
 	}
 
 	if (reason == WEBKIT_WEB_NAVIGATION_REASON_LINK_CLICKED) {
@@ -3654,6 +3644,13 @@ ephy_window_constructor (GType type,
 
 	/* Disabled actions not needed for application mode. */
 	mode = ephy_embed_shell_get_mode (embed_shell);
+	action = gtk_action_group_get_action (priv->popups_action_group, "OpenLinkInBrowser");
+	ephy_action_change_sensitivity_flags (action, SENS_FLAG_CHROME,
+					      mode != EPHY_EMBED_SHELL_MODE_APPLICATION);
+	gtk_action_set_visible (action, mode == EPHY_EMBED_SHELL_MODE_APPLICATION);
+
+	action = gtk_action_group_get_action (priv->toolbar_action_group, "NavigationOpenInBrowser");
+	gtk_action_set_visible (action, mode == EPHY_EMBED_SHELL_MODE_APPLICATION);
 	if (mode == EPHY_EMBED_SHELL_MODE_APPLICATION)
 	{
 		/* FileNewTab and FileNewWindow are sort of special. */
@@ -3667,6 +3664,7 @@ ephy_window_constructor (GType type,
 							      disabled_actions_for_app_mode[i]);
 			ephy_action_change_sensitivity_flags (action, SENS_FLAG_CHROME, TRUE);
 		}
+		g_object_set (G_OBJECT (priv->location_controller), "editable", FALSE, NULL);
 	}
 
 	/* ensure the UI is updated */
