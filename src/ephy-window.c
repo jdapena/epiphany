@@ -692,8 +692,8 @@ get_chromes_visibility (EphyWindow *window,
 			address = ephy_web_view_get_address (web_view);
 			
 			soup_uri = soup_uri_new (address);
-			*show_toolbar = (g_strcmp0 (soup_uri->host, ephy_embed_shell_get_app_mode_origin (embed_shell)) != 0);
-			soup_uri_free (soup_uri);
+			*show_toolbar = soup_uri && (g_strcmp0 (soup_uri->host, ephy_embed_shell_get_app_mode_origin (embed_shell)) != 0);
+			if (soup_uri) soup_uri_free (soup_uri);
 		} else {
 			*show_toolbar = FALSE;
 		}
