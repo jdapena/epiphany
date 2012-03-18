@@ -1078,15 +1078,32 @@ ephy_shell_get_prefs_dialog (EphyShell *shell)
 }
 
 void
-_ephy_shell_create_instance (EphyEmbedShellMode mode,
-                             const char *app_mode_origin)
+_ephy_shell_create_instance (EphyEmbedShellMode mode)
 {
   g_assert (ephy_shell == NULL);
 
   ephy_shell = EPHY_SHELL (g_object_new (EPHY_TYPE_SHELL,
                                          "application-id", "org.gnome.Epiphany",
                                          "mode", mode,
-                                         "app-mode-origin", app_mode_origin,
+                                         NULL));
+  /* FIXME weak ref */
+  g_assert (ephy_shell != NULL);
+}
+
+void
+_ephy_shell_create_web_application_instance (EphyEmbedShellMode mode,
+                                             const char *origin,
+                                             const char *launch_uri,
+                                             const char *title)
+{
+  g_assert (ephy_shell == NULL);
+
+  ephy_shell = EPHY_SHELL (g_object_new (EPHY_TYPE_SHELL,
+                                         "application-id", "org.gnome.Epiphany",
+                                         "mode", mode,
+                                         "app-mode-origin", origin,
+                                         "app-mode-title", title,
+                                         "app-mode-launch-uri", launch_uri,
                                          NULL));
   /* FIXME weak ref */
   g_assert (ephy_shell != NULL);

@@ -1406,6 +1406,17 @@ setup_ui_manager (EphyWindow *window)
 	action_group = gtk_action_group_new ("SpecialToolbarActions");
 	action =
 		g_object_new (EPHY_TYPE_NAVIGATION_HISTORY_ACTION,
+			      "name", "NavigationBackToApplication",
+			      "label", _("Back to application"),
+			      "icon-name", "go-previous-symbolic",
+			      "window", window,
+			      "direction", EPHY_NAVIGATION_HISTORY_DIRECTION_BACK_TO_WEB_APP,
+			      NULL);
+	gtk_action_group_add_action (action_group, action);
+	g_object_unref (action);
+
+	action =
+		g_object_new (EPHY_TYPE_NAVIGATION_HISTORY_ACTION,
 			      "name", "NavigationBack",
 			      "label", _("Back"),
 			      "icon-name", "go-previous-symbolic",
@@ -3428,6 +3439,12 @@ setup_toolbar (EphyWindow *window)
 			    toolbar, FALSE, FALSE, 0);
 
 	action = gtk_action_group_get_action (priv->toolbar_action_group,
+					      "NavigationBackToApplication");
+	gtk_action_set_visible (action, FALSE);
+	g_signal_connect_swapped (action, "open-link",
+				  G_CALLBACK (ephy_link_open), window);
+
+	action = gtk_action_group_get_action (priv->toolbar_action_group,
 					      "NavigationBack");
 	g_signal_connect_swapped (action, "open-link",
 				  G_CALLBACK (ephy_link_open), window);
@@ -3649,12 +3666,21 @@ ephy_window_constructor (GType type,
 					      mode != EPHY_EMBED_SHELL_MODE_APPLICATION);
 	gtk_action_set_visible (action, mode == EPHY_EMBED_SHELL_MODE_APPLICATION);
 
+	action = gtk_action_group_get_action (priv->toolbar_action_group, "NavigationBackToApplication");
+	gtk_action_set_visible (action, mode == EPHY_EMBED_SHELL_MODE_APPLICATION);
 	action = gtk_action_group_get_action (priv->toolbar_action_group, "NavigationOpenInBrowser");
 	gtk_action_set_visible (action, mode == EPHY_EMBED_SHELL_MODE_APPLICATION);
 	action = gtk_action_group_get_action (priv->toolbar_action_group, "PageMenu");
 	gtk_action_set_visible (action, mode != EPHY_EMBED_SHELL_MODE_APPLICATION);
 	if (mode == EPHY_EMBED_SHELL_MODE_APPLICATION)
 	{
+		char *back_to_application_label;
+
+		back_to_application_label = g_strdup_printf(_("Back to %s"), ephy_embed_shell_get_app_mode_title (embed_shell));
+		action = gtk_action_group_get_action (priv->toolbar_action_group, "NavigationBackToApplication");
+		gtk_action_set_label (action, back_to_application_label);
+		g_free (back_to_application_label);
+
 		/* FileNewTab and FileNewWindow are sort of special. */
 		action = gtk_action_group_get_action (toolbar_action_group, "FileNewTab");
 		ephy_action_change_sensitivity_flags (action, SENS_FLAG_CHROME,

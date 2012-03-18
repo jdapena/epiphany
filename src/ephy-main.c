@@ -245,7 +245,6 @@ main (int argc,
   EphyShellStartupContext *ctx;
   EphyStartupFlags startup_flags;
   EphyEmbedShellMode mode;
-  char *app_mode_origin;
   int status;
   EphyFileHelpersFlags flags;
 
@@ -453,40 +452,66 @@ main (int argc,
     exit (0);
   }
 
-  app_mode_origin = NULL;
+  ephy_embed_prefs_init ();
 
   /* Now create the shell */
-  if (private_instance)
+  if (private_instance) {
     mode = EPHY_EMBED_SHELL_MODE_PRIVATE;
-  else if (application_mode) {
-    char *app_name;
+    _ephy_shell_create_instance (mode);
+  } else if (application_mode) {
+    char *profile_directory_basename, *profile_directory_basename_no_prefix,
+      *desktop_file, *desktop_file_path;
+    char *app_name = NULL;
     char *app_icon;
+    char *app_mode_origin;
+    char *contents;
+
     SoupURI *soup_uri;
 
     mode = EPHY_EMBED_SHELL_MODE_APPLICATION;
 
-    app_name = g_strrstr (profile_directory, EPHY_WEB_APP_PREFIX);
+    profile_directory_basename = g_path_get_basename (profile_directory);
+    profile_directory_basename_no_prefix = strstr (profile_directory_basename, EPHY_WEB_APP_PREFIX);
+    if (profile_directory_basename_no_prefix)
+      profile_directory_basename_no_prefix += strlen (EPHY_WEB_APP_PREFIX);
+    desktop_file = g_strconcat (profile_directory_basename_no_prefix, ".desktop", NULL);
+    desktop_file_path = g_build_filename (profile_directory, desktop_file, NULL);
+    g_free (desktop_file);
+
     app_icon = g_build_filename (profile_directory, EPHY_WEB_APP_ICON_NAME, NULL);
+    gtk_window_set_default_icon_from_file (app_icon, NULL);
 
-    if (app_name) {
-      /* Skip the 'app-' part */
-      app_name += strlen (EPHY_WEB_APP_PREFIX);
+    if (g_file_get_contents (desktop_file_path, &contents, NULL, NULL)) {
+      GKeyFile *key;
 
-      g_set_prgname (app_name);
-      g_set_application_name (app_name);
+      key = g_key_file_new ();
+      g_key_file_load_from_data (key, contents, -1, 0, NULL);
+      app_name = g_key_file_get_string (key, "Desktop Entry", "Name", NULL);
 
-      gtk_window_set_default_icon_from_file (app_icon, NULL);
-
-      /* We need to re-set this because we have already parsed the
-       * options, which inits GTK+ and sets this as a side effect. */
-      gdk_set_program_class (app_name);
+      g_key_file_free (key);
     }
 
+    g_set_prgname (app_name);
+    g_set_application_name (app_name);
+      
+    /* We need to re-set this because we have already parsed the
+     * options, which inits GTK+ and sets this as a side effect. */
+    gdk_set_program_class (app_name);
+
+    g_free (contents);
+    g_free (profile_directory_basename);
+    g_free (desktop_file_path);
     g_free (app_icon);
 
     soup_uri = soup_uri_new (arguments[0]);
     app_mode_origin = g_strdup (soup_uri->host);
     soup_uri_free (soup_uri);
+
+    _ephy_shell_create_web_application_instance (mode,
+                                                 app_mode_origin,
+                                                 arguments[0],
+                                                 app_name);
+    g_free (app_mode_origin);
   } else {
     mode = EPHY_EMBED_SHELL_MODE_BROWSER;
 
@@ -494,11 +519,9 @@ main (int argc,
     g_set_application_name (_("Web"));
 
     gtk_window_set_default_icon_name ("web-browser");
-  }
 
-  ephy_embed_prefs_init ();
-  _ephy_shell_create_instance (mode, app_mode_origin);
-  g_free (app_mode_origin);
+    _ephy_shell_create_instance (mode);
+  }
 
   startup_flags = get_startup_flags ();
   ctx = ephy_shell_startup_context_new (startup_flags,

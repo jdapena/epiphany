@@ -85,7 +85,7 @@ main (int argc, char *argv[])
 
   ephy_debug_init ();
   ephy_embed_prefs_init ();
-  _ephy_shell_create_instance (EPHY_EMBED_SHELL_MODE_PRIVATE, NULL);
+  _ephy_shell_create_instance (EPHY_EMBED_SHELL_MODE_PRIVATE);
 
   if (!ephy_file_helpers_init (NULL,
                                EPHY_FILE_HELPERS_ENSURE_EXISTS | EPHY_FILE_HELPERS_PRIVATE_PROFILE,

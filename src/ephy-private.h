@@ -60,7 +60,11 @@ EphyShellStartupContext *ephy_shell_startup_context_new       (EphyStartupFlags 
                                                                char                    **arguments,
                                                                guint32                   user_time);
 
-void                     _ephy_shell_create_instance          (EphyEmbedShellMode        mode,
-                                                               const char               *app_mode_origin);
+void                     _ephy_shell_create_instance          (EphyEmbedShellMode        mode);
+
+void                     _ephy_shell_create_web_application_instance (EphyEmbedShellMode mode,
+                                                                      const char        *origin,
+                                                                      const char        *launch_uri,
+                                                                      const char        *title);
 #endif
 

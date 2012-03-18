@@ -104,6 +104,19 @@ ephy_toolbar_constructed (GObject *object)
   back_forward = gtk_tool_item_new ();
   box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
 
+  /* Back to application*/
+  tool_button = gtk_button_new ();
+  /* FIXME: apparently we need an image inside the button for the action
+   * icon to appear. */
+  gtk_button_set_image (GTK_BUTTON (tool_button), gtk_image_new ());
+  action_group = ephy_window_get_toolbar_action_group (priv->window);
+  action = gtk_action_group_get_action (action_group, "NavigationBackToApplication");
+  gtk_action_set_always_show_image (action, TRUE);
+
+  gtk_activatable_set_related_action (GTK_ACTIVATABLE (tool_button),
+                                      action);
+  gtk_container_add (GTK_CONTAINER (box), GTK_WIDGET (tool_button));
+
   /* Back */
   tool_button = ephy_middle_clickable_button_new ();
   /* FIXME: apparently we need an image inside the button for the action

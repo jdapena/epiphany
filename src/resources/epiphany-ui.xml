@@ -20,6 +20,7 @@
 	</popup>
 
 	<popup name="EphyDocumentPopup" action="PopupAction">
+		<menuitem name="GoBackToApplicationDP" action="NavigationBackToApplication"/>
 		<menuitem name="GoBackDP" action="NavigationBack"/>
 		<menuitem name="GoForwardDP" action="NavigationForward"/>
 		<menuitem name="GoReloadDP" action="ViewReload"/>
