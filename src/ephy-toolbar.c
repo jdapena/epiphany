@@ -150,18 +150,6 @@ ephy_toolbar_constructed (GObject *object)
   gtk_widget_show_all (GTK_WIDGET (back_forward));
   gtk_widget_set_margin_right (GTK_WIDGET (back_forward), 12);
 
-  /* Open in browser */
-  tool_item = gtk_tool_item_new ();
-  tool_button = gtk_button_new ();
-  action_group = ephy_window_get_toolbar_action_group (priv->window);
-  action = gtk_action_group_get_action (action_group, "NavigationOpenInBrowser");
-  gtk_activatable_set_related_action (GTK_ACTIVATABLE (tool_button),
-                                      action);
-  gtk_button_set_label (GTK_BUTTON (tool_button), "Open in browser");
-  gtk_container_add (GTK_CONTAINER (tool_item), tool_button);
-  gtk_container_add (GTK_CONTAINER (toolbar), GTK_WIDGET (tool_item));
-  gtk_widget_show_all (GTK_WIDGET (tool_item));
-
   /* Location and Reload/Stop */
   location_stop_reload = gtk_tool_item_new ();
   box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
@@ -197,6 +185,18 @@ ephy_toolbar_constructed (GObject *object)
 
   gtk_widget_set_margin_right (GTK_WIDGET (location_stop_reload), 12);
   gtk_widget_show_all (GTK_WIDGET (location_stop_reload));
+
+  /* Open in browser */
+  tool_item = gtk_tool_item_new ();
+  tool_button = gtk_button_new ();
+  action_group = ephy_window_get_toolbar_action_group (priv->window);
+  action = gtk_action_group_get_action (action_group, "NavigationOpenInBrowser");
+  gtk_activatable_set_related_action (GTK_ACTIVATABLE (tool_button),
+                                      action);
+  gtk_button_set_label (GTK_BUTTON (tool_button), "Open in browser");
+  gtk_container_add (GTK_CONTAINER (tool_item), tool_button);
+  gtk_container_add (GTK_CONTAINER (toolbar), GTK_WIDGET (tool_item));
+  gtk_widget_show_all (GTK_WIDGET (tool_item));
 
   /* Page Menu */
   tool_item = gtk_tool_item_new ();
