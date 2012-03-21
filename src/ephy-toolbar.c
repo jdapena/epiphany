@@ -83,7 +83,7 @@ ephy_toolbar_constructed (GObject *object)
   EphyToolbarPrivate *priv = EPHY_TOOLBAR (object)->priv;
   GtkActionGroup *action_group;
   GtkAction *action;
-  GtkToolItem *back_forward, *location_stop_reload, *tool_item;
+  GtkToolItem *back_to_application, *back_forward, *location_stop_reload, *tool_item;
   GtkWidget *tool_button, *box, *location, *toolbar;
   GtkSizeGroup *size;
 
@@ -100,11 +100,8 @@ ephy_toolbar_constructed (GObject *object)
   gtk_style_context_add_class (gtk_widget_get_style_context (toolbar),
                                GTK_STYLE_CLASS_MENUBAR);
 
-  /* Back and Forward */
-  back_forward = gtk_tool_item_new ();
-  box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
-
   /* Back to application*/
+  back_to_application = gtk_tool_item_new ();
   tool_button = gtk_button_new ();
   /* FIXME: apparently we need an image inside the button for the action
    * icon to appear. */
@@ -115,7 +112,14 @@ ephy_toolbar_constructed (GObject *object)
 
   gtk_activatable_set_related_action (GTK_ACTIVATABLE (tool_button),
                                       action);
-  gtk_container_add (GTK_CONTAINER (box), GTK_WIDGET (tool_button));
+  gtk_container_add (GTK_CONTAINER (back_to_application), GTK_WIDGET (tool_button));
+  gtk_container_add (GTK_CONTAINER (toolbar), GTK_WIDGET (back_to_application));
+  gtk_widget_show_all (GTK_WIDGET (back_to_application));
+  gtk_widget_set_margin_right (GTK_WIDGET (tool_button), 12);
+
+  /* Back and Forward */
+  back_forward = gtk_tool_item_new ();
+  box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
 
   /* Back */
   tool_button = ephy_middle_clickable_button_new ();
