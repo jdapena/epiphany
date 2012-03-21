@@ -1409,6 +1409,7 @@ setup_ui_manager (EphyWindow *window)
 			      "name", "NavigationBackToApplication",
 			      "label", _("Back to application"),
 			      "icon-name", "go-previous-symbolic",
+			      "is-important", TRUE,
 			      "window", window,
 			      "direction", EPHY_NAVIGATION_HISTORY_DIRECTION_BACK_TO_WEB_APP,
 			      NULL);
@@ -3675,12 +3676,8 @@ ephy_window_constructor (GType type,
 	gtk_action_set_visible (action, mode != EPHY_EMBED_SHELL_MODE_APPLICATION);
 	if (mode == EPHY_EMBED_SHELL_MODE_APPLICATION)
 	{
-		char *back_to_application_label;
-
-		back_to_application_label = g_strdup_printf(_("Back to %s"), ephy_embed_shell_get_app_mode_title (embed_shell));
 		action = gtk_action_group_get_action (priv->toolbar_action_group, "NavigationBackToApplication");
-		gtk_action_set_label (action, back_to_application_label);
-		g_free (back_to_application_label);
+		gtk_action_set_label (action, ephy_embed_shell_get_app_mode_title (embed_shell));
 
 		/* FileNewTab and FileNewWindow are sort of special. */
 		action = gtk_action_group_get_action (toolbar_action_group, "FileNewTab");
