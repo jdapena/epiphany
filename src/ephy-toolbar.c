@@ -193,7 +193,6 @@ ephy_toolbar_constructed (GObject *object)
   action = gtk_action_group_get_action (action_group, "NavigationOpenInBrowser");
   gtk_activatable_set_related_action (GTK_ACTIVATABLE (tool_button),
                                       action);
-  gtk_button_set_label (GTK_BUTTON (tool_button), "Open in browser");
   gtk_container_add (GTK_CONTAINER (tool_item), tool_button);
   gtk_container_add (GTK_CONTAINER (toolbar), GTK_WIDGET (tool_item));
   gtk_widget_show_all (GTK_WIDGET (tool_item));

@@ -1442,6 +1442,7 @@ setup_ui_manager (EphyWindow *window)
 	action =
 		g_object_new (EPHY_TYPE_WINDOW_ACTION,
 			      "name", "NavigationOpenInBrowser",
+			      "label", _("Open as Web page"),
 			      "window", window,
 			      NULL);
 	g_signal_connect (G_OBJECT (action),
