@@ -2518,7 +2518,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
 
       dialog = gtk_message_dialog_new (NULL, GTK_DIALOG_MODAL,
                                        GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
-                                       _("Currently Epiphany only support installing hosted apps, not extensions nor packages apps"));
+                                       _("Currently Epiphany only support installing hosted and packaged apps, not extensions"));
       gtk_dialog_run (GTK_DIALOG (dialog));
       gtk_widget_destroy (dialog);
 
