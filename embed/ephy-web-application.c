@@ -1169,7 +1169,7 @@ ephy_web_application_get_applications (void)
     name = g_file_info_get_name (info);
     if (g_str_has_prefix (name, EPHY_WEB_APP_PREFIX)) {
       char *profile_dir;
-      profile_dir = g_build_filename (ephy_dot_dir (), name, NULL);
+      profile_dir = g_build_filename (ephy_apps_dot_dir (), name, NULL);
 
       app = ephy_web_application_new ();
       if (ephy_web_application_load (app, profile_dir, NULL)) {
