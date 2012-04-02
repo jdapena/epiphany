@@ -702,7 +702,8 @@ create_desktop_and_metadata_files (EphyWebApplication *app,
   if (priv->author_url)
     g_key_file_set_value (metadata_file, "Application", "AuthorURL", priv->author_url);
 
-  uri_string = g_strconcat (priv->origin, priv->launch_path, NULL);
+  uri_string = ephy_web_application_get_full_uri (app);
+
   exec_string = g_strdup_printf ("epiphany --application-mode --profile=\"%s\" %s",
 				 priv->profile_dir, 
                                  uri_string);
@@ -1338,6 +1339,11 @@ ephy_web_application_set_full_uri (EphyWebApplication *app,
 
   g_free (priv->launch_path);
   priv->launch_path = soup_uri_to_string (uri, TRUE);
+
+  if (g_strcmp0(priv->launch_path, "/") == 0) {
+    g_free (priv->launch_path);
+    priv->launch_path = g_strdup ("");
+  }
 
   host_uri = soup_uri_copy_host (uri);
   g_free (priv->origin);
