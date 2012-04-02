@@ -936,6 +936,86 @@ out:
 }
 
 /**
+ * ephy_file_move_dir_recursively:
+ * @source: directory to move
+ * @destination: destination folder
+ * @error: location to set any #GError
+ *
+ * Move @source and its contents. Like calling cp -R sourcepath destinationpath.
+ *
+ * Returns: %TRUE if delete succeeded
+ **/
+gboolean
+ephy_file_move_dir_recursively (GFile *source,
+				GFile *destination,
+				GError **error)
+{
+	GFileEnumerator *children = NULL;
+	GFileInfo *info;
+	gboolean ret = TRUE;
+	GError *err = NULL;
+
+	g_file_make_directory (destination, NULL, &err);
+
+	if (err)
+		goto out;
+
+	children = g_file_enumerate_children (source,
+					      "standard::name,standard::type",
+					      0, NULL, &err);
+	if (err)
+		goto out;
+
+	info = g_file_enumerator_next_file (children, NULL, &err);
+	while (info && !err) {
+		GFile *child, *destination_child;
+		const char *name;
+		GFileType type;
+
+		if (err)
+			goto out;
+
+		name = g_file_info_get_name (info);
+		child = g_file_get_child (source, name);
+		type = g_file_info_get_file_type (info);
+		destination_child = g_file_get_child (destination, name);
+
+		LOG ("ephy-file-move-dir: delete child %s", name);
+		if (type == G_FILE_TYPE_DIRECTORY) {
+			ret = ephy_file_move_dir_recursively (child, destination_child, &err);
+		} else if (type == G_FILE_TYPE_REGULAR) {
+			ret = g_file_move (child, destination_child,
+					   G_FILE_COPY_OVERWRITE | G_FILE_COPY_NOFOLLOW_SYMLINKS,
+					   NULL, NULL, NULL, &err);
+		}
+		g_object_unref (child);
+		g_object_unref (destination_child);
+		g_object_unref (info);
+
+		if (!ret)
+			goto out;
+
+		info = g_file_enumerator_next_file (children, NULL, &err);
+	}
+
+	ret = TRUE;
+
+	LOG ("ephy-file-delete-dir: delete successful");
+	g_file_delete (source, NULL, &err);
+
+out:
+	if (error)
+		*error = err;
+	else
+		g_error_free (err);
+
+	if (children)
+		g_object_unref (children);
+
+	return ret;
+}
+
+/**
  * ephy_file_delete_uri
  * @uri: URI of the file to be deleted
  *

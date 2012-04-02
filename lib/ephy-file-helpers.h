@@ -87,6 +87,9 @@ gboolean           ephy_file_browse_to           (GFile       *file,
                                                   guint32      user_time);
 gboolean           ephy_file_delete_dir_recursively (GFile *file,
                                                      GError      **error);
+gboolean           ephy_file_move_dir_recursively (GFile *source,
+						   GFile *destination,
+						   GError **error);
 void               ephy_file_delete_uri          (const char  *uri);
 
 G_END_DECLS

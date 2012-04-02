@@ -1867,9 +1867,8 @@ chrome_webstore_install_cb (gint response,
         crx_contents_file = g_file_new_for_path (crx_contents_path);
         g_free (crx_contents_path);
 
-        result = g_file_move (tmp_crx_contents_file, crx_contents_file,
-                              G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
-                              NULL, NULL, NULL, &(install_data->error));
+        result = ephy_file_move_dir_recursively (tmp_crx_contents_file, crx_contents_file,
+                                                 &(install_data->error));
         g_object_unref (crx_contents_file);
         g_object_unref (tmp_crx_contents_file);
       }
