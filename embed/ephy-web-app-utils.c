@@ -2011,6 +2011,7 @@ parse_crx_manifest (const char *manifest_data,
                     char **local_path,
                     char **description,
                     char **update_url,
+                    GList **permissions,
                     char **best_icon_path,
                     GError **error)
 {
@@ -2022,6 +2023,7 @@ parse_crx_manifest (const char *manifest_data,
   char *_description = NULL;
   char *_update_url = NULL;
   char *_best_icon_path = NULL;
+  GList *_permissions = NULL;
   GError *_error = NULL;
 
   parser = json_parser_new ();
@@ -2045,6 +2047,7 @@ parse_crx_manifest (const char *manifest_data,
       
     if (_error == NULL) {
       GList *url_list;
+
       _description = ephy_json_path_query_string ("$.description", root_node);
       _update_url = ephy_json_path_query_string ("$.update_url", root_node);
       _best_icon_path = ephy_json_path_query_best_icon ("$.icons", root_node);
@@ -2052,6 +2055,7 @@ parse_crx_manifest (const char *manifest_data,
       if (url_list && _web_url) {
         _url_regex = build_hosted_apps_url_regex (_web_url, url_list);
       }
+      _permissions = ephy_json_path_query_string_list ("$.permissions", root_node);
       g_list_foreach (url_list, (GFunc) g_free, NULL);
       g_list_free (url_list);
     }
@@ -2088,6 +2092,13 @@ parse_crx_manifest (const char *manifest_data,
     *update_url = _update_url;
   else
     g_free (_update_url);
+
+  if (permissions) {
+    *permissions = _permissions;
+  } else {
+    g_list_foreach (_permissions, (GFunc) g_free, NULL);
+    g_list_free (_permissions);
+  }
 
   if (best_icon_path)
     *best_icon_path = _best_icon_path;
@@ -2134,7 +2145,8 @@ on_crx_extract (GObject *object,
         char *url_regex = NULL;
         char *local_path = NULL;
         char *best_icon_path = NULL;
-        is_ok = parse_crx_manifest (install_data->manifest_data, &name, &web_url, &url_regex, &local_path, &description, NULL, &best_icon_path, &error);
+        GList *permissions = NULL;
+        is_ok = parse_crx_manifest (install_data->manifest_data, &name, &web_url, &url_regex, &local_path, &description, NULL, &permissions, &best_icon_path, &error);
         if (is_ok) {
           ephy_web_application_set_name (install_data->app, name);
           ephy_web_application_set_description (install_data->app, description);
@@ -2157,8 +2169,11 @@ on_crx_extract (GObject *object,
               ephy_web_application_set_uri_regex (install_data->app, url_regex);
             }
           }
+          ephy_web_application_set_permissions (install_data->app, permissions);
           install_data->best_icon_path = best_icon_path;
         }
+        g_list_foreach (permissions, (GFunc) g_free, NULL);
+        g_list_free (permissions);
         g_free (name);
         g_free (description);
         g_free (web_url);
@@ -2427,6 +2442,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   char *url_regex = NULL;
   char *local_path = NULL;
   char *update_url = NULL;
+  GList *permissions = NULL;
   char *best_icon_path = NULL;
   JSObjectRef callback_function = NULL;
 
@@ -2460,7 +2476,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (*exception == NULL) {
       manifest = ephy_js_string_to_utf8 (manifest_string);
 
-      parse_crx_manifest (manifest, &name, &web_url, &url_regex, &local_path, &description, &update_url, &best_icon_path, NULL);
+      parse_crx_manifest (manifest, &name, &web_url, &url_regex, &local_path, &description, &update_url, &permissions, &best_icon_path, NULL);
     }
   }
 
@@ -2524,6 +2540,10 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
       ephy_web_application_set_full_uri (app, web_url);
       if (url_regex)
         ephy_web_application_set_uri_regex (app, url_regex);
+    }
+
+    if (permissions) {
+      ephy_web_application_set_permissions (app, permissions);
     }
 
     ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
@@ -2638,6 +2658,8 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   g_free (url_regex);
   g_free (local_path);
   g_free (best_icon_path);
+  g_list_foreach (permissions, (GFunc) g_free, NULL);
+  g_list_free (permissions);
   if (*exception) return JSValueMakeNull (context);
   return JSValueMakeUndefined (context);
 }

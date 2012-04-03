@@ -67,6 +67,7 @@ struct _EphyWebApplicationPrivate
   char *launch_path;
   char *install_date;
   char *profile_dir;
+  GList *permissions;
   EphyWebApplicationStatus status;
   GHashTable *custom_keys;
 };
@@ -473,6 +474,51 @@ ephy_web_application_set_launch_path (EphyWebApplication *app,
   g_object_notify (G_OBJECT (app), "launch-path");
 }
 
+/**
+ * ephy_web_application_get_permissions:
+ * @app: an #EphyWebApplication
+ *
+ * Obtains the list of permissions for this application.
+ *
+ * Returns: (element-type utf8) (transfer full): a #GList of permission strings
+ */
+GList *
+ephy_web_application_get_permissions (EphyWebApplication *app)
+{
+  return app->priv->permissions;
+}
+
+/**
+ * ephy_web_application_set_permissions:
+ * @app: an #EphyWebApplication
+ * @permissions: (element-type utf8): a #GList of strings
+ *
+ * Set new set of permissions for @app
+ */
+void
+ephy_web_application_set_permissions (EphyWebApplication *app,
+				      GList *permissions)
+{
+  GList *node, *old_permissions;
+
+  if (app->priv->permissions == permissions)
+    return;
+
+  old_permissions = app->priv->permissions;
+
+  app->priv->permissions = NULL;
+
+  for (node = permissions; node != NULL; node = g_list_next (node)) {
+    app->priv->permissions = g_list_prepend (app->priv->permissions, g_strdup ((char*) node->data));
+  }
+
+  app->priv->permissions = g_list_reverse (app->priv->permissions);
+
+  g_list_foreach (old_permissions, (GFunc) g_free, NULL);
+  g_list_free (old_permissions);
+
+}
+
 EphyWebApplicationStatus
 ephy_web_application_get_status (EphyWebApplication *app)
 {
@@ -577,6 +623,7 @@ ephy_web_application_load (EphyWebApplication *app,
     }
     if (is_ok) {
       char **custom_keys;
+      char **permissionsv;
       gsize length = 0, i;
 
       priv->uri_regex = g_key_file_get_string (key, "Application", "URIRegEx", NULL);
@@ -585,6 +632,16 @@ ephy_web_application_load (EphyWebApplication *app,
       priv->description = g_key_file_get_string (key, "Application", "Description", NULL);
       priv->author = g_key_file_get_string (key, "Application", "Author", NULL);
       priv->author_url = g_key_file_get_string (key, "Application", "AuthorURL", NULL);
+
+      permissionsv = g_key_file_get_string_list (key, "Application", "Permissions", &length, NULL);
+      priv->permissions = NULL;
+      if (length > 0) {
+	for (i = 0; i < length; i++) {
+	  priv->permissions = g_list_prepend (priv->permissions, permissionsv[i]);
+	}
+	priv->permissions = g_list_reverse (priv->permissions);
+      }
+      g_free (permissionsv);
 
       g_hash_table_remove_all (priv->custom_keys);
 
@@ -718,6 +775,24 @@ ephy_web_application_launch (EphyWebApplication *app)
   return result;
 }
 
+static char **
+str_vector_from_list (GList *str_list, int *length)
+{
+  char **result;
+  int i;
+  GList *node;
+
+  *length = g_list_length (str_list);
+
+  result = g_new0 (char *, *length + 1);
+  for (i = 0, node = str_list; node != NULL; i++, node = g_list_next (node)) {
+    result[i] = (char *) node->data;
+  }
+  result[*length] = NULL;
+
+  return result;
+}
+
 static gboolean
 create_desktop_and_metadata_files (EphyWebApplication *app,
                                    GdkPixbuf *icon,
@@ -763,6 +838,14 @@ create_desktop_and_metadata_files (EphyWebApplication *app,
   g_key_file_set_value (metadata_file, "Application", "Origin", priv->origin);
   if (priv->uri_regex) g_key_file_set_value (metadata_file, "Application", "URIRegEx", priv->uri_regex);
   if (priv->install_origin) g_key_file_set_value (metadata_file, "Application", "InstallOrigin", priv->install_origin);
+  if (priv->permissions) {
+    char **permissionsv;
+    int length;
+
+    permissionsv = str_vector_from_list (priv->permissions, &length);
+    g_key_file_set_string_list (metadata_file, "Application", "Permissions", (const gchar **)permissionsv, length);
+    g_free (permissionsv);
+  }
 
   g_key_file_set_value (desktop_file, "Desktop Entry", "StartupNotify", "true");
   g_key_file_set_value (desktop_file, "Desktop Entry", "Terminal", "false");
