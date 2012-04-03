@@ -645,6 +645,7 @@ ephy_web_application_load (EphyWebApplication *app,
 
       g_hash_table_remove_all (priv->custom_keys);
 
+      length = 0;
       custom_keys = g_key_file_get_keys (key, "CustomKeys", &length, NULL);
       for (i = 0; i < length; i++) {
         char *value;

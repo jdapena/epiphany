@@ -2420,6 +2420,29 @@ chrome_retrieve_crx_update_xml (EphyWebApplication *app,
   return result;
 }
 
+static const char *forbidden_permissions[] = {
+  "background",
+  "bookmarks",
+  "chrome://favicon/",
+  "contentSettings",
+  "contextMenus",
+  "cookies",
+  "experimental",
+  "fileBrowserHandler",
+  "history",
+  "idle",
+  "management",
+  "privacy",
+  "proxy",
+  "tabs",
+  "tts",
+  "ttsEngine",
+  "webNavigation",
+  "webRequest",
+  "webRequestBlocking",
+  NULL
+};
+
 static JSValueRef
 chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
                                                      JSObjectRef function,
@@ -2445,6 +2468,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   GList *permissions = NULL;
   char *best_icon_path = NULL;
   JSObjectRef callback_function = NULL;
+  GList *forbidden_permissions_found = NULL;
 
   if (argumentCount > 2 || 
       !JSValueIsObject (context, arguments[0])) {
@@ -2477,6 +2501,15 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
       manifest = ephy_js_string_to_utf8 (manifest_string);
 
       parse_crx_manifest (manifest, &name, &web_url, &url_regex, &local_path, &description, &update_url, &permissions, &best_icon_path, NULL);
+
+      if (permissions) {
+        const char **p;
+
+        for (p = forbidden_permissions; *p != NULL; p++) {
+          if (g_list_find_custom (permissions, *p, (GCompareFunc) g_strcmp0))
+            forbidden_permissions_found = g_list_prepend (forbidden_permissions_found, (gpointer) *p);
+        }
+      }
     }
   }
 
@@ -2516,7 +2549,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     default_locale = ephy_js_string_to_utf8 (default_locale_string);
   }
 
-  if (name && manifest && (web_url || (local_path && id))) {
+  if (name && manifest && (web_url || (local_path && id)) && (forbidden_permissions_found == NULL)) {
     EphyWebApplication *app;
     char *used_icon_url = NULL;
     GdkPixbuf *icon_pixbuf = NULL;
@@ -2623,7 +2656,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     JSStringRef result_string;
     JSValueRef parameters[1];
 
-    if (manifest && !web_url) {
+    if (manifest && !web_url && !local_path) {
       GtkWidget *dialog;
 
       dialog = gtk_message_dialog_new (NULL, GTK_DIALOG_MODAL,
@@ -2634,9 +2667,30 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
 
       result_string = JSStringCreateWithUTF8CString ("user_cancelled");
       
+    } else if (forbidden_permissions_found != NULL) {
+      GtkWidget *dialog;
+      GList *node;
+      GString *permissions_list;
+
+      permissions_list = g_string_new (NULL);
+      for (node = forbidden_permissions_found; node != NULL; node = g_list_next (node)) {
+        g_string_append (permissions_list, " ");
+        g_string_append (permissions_list, (char *) node->data);
+      }
+
+      dialog = gtk_message_dialog_new (NULL, GTK_DIALOG_MODAL,
+                                       GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+                                       _("This application requires these not supported extensions: %s. Epiphany support only a subset of Chrome extensions API."), permissions_list->str);
+      g_string_free (permissions_list, TRUE);
+      gtk_dialog_run (GTK_DIALOG (dialog));
+      gtk_widget_destroy (dialog);
+
+      result_string = JSStringCreateWithUTF8CString ("user_cancelled");
+      
     } else {
       result_string = JSStringCreateWithUTF8CString ("manifest_error");
     }
+    g_list_free (forbidden_permissions_found);
     parameters[0] = JSValueMakeString (context, result_string);
     JSStringRelease (result_string);
 
