@@ -3021,9 +3021,12 @@ chrome_management_launch_app (JSContextRef context,
   }
 
   if (argumentCount == 2) {
-    callback_function = JSValueToObject (context, arguments[0], exception);
-    if (!*exception && !JSObjectIsFunction (context, callback_function)) {
-      ephy_js_set_exception (context, exception, _("Callback parameter is not a function."));
+    if (JSValueIsObject (context, arguments[1])) {
+      callback_function = JSValueToObject (context, arguments[1], exception);
+      
+      if (!*exception && !JSObjectIsFunction (context, callback_function)) {
+        callback_function = NULL;
+      }
     }
   }
   if (*exception) return JSValueMakeNull (context);
