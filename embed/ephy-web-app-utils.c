@@ -1934,10 +1934,80 @@ crx_get_translation (const char *path, const char *key, const char * default_loc
   return result;
 }
 
+static gchar *
+build_hosted_apps_url_regex (const char *web_url, GList *urls)
+{
+  GString *buffer;
+  gchar *pattern;
+  GList *node;
+
+  buffer = g_string_new (NULL);
+  pattern = g_regex_escape_string (web_url, -1);
+  g_string_append (buffer, "(");
+  g_string_append (buffer, pattern);
+  g_string_append (buffer, ")");
+
+  for (node = urls; node != NULL; node = g_list_next (node)) {
+    SoupURI *uri;
+    const gchar *scheme_pattern;
+    gchar *host_pattern;
+
+    if (g_str_has_prefix ((char *) node->data, "*://")) {
+      char *uri_string;
+
+      uri_string = g_strconcat ("ephy-match://", ((char *) node->data)+4, NULL);
+      uri = soup_uri_new (uri_string);
+      g_free (uri_string);
+    } else {
+      uri = soup_uri_new ((char *) node->data);
+    }
+    if (!uri->scheme)
+      continue;
+    if (g_strcmp0 (uri->scheme, "ephy-match") == 0) {
+      scheme_pattern = "(http|https)";
+    } else if (g_strcmp0 (uri->scheme, "http") == 0 || g_strcmp0 (uri->scheme, "https") == 0) {
+      scheme_pattern = uri->scheme;
+    } else {
+      continue;
+    }
+
+    if (!uri->host)
+      continue;
+    if (g_str_has_prefix (uri->host, "*.")) {
+      gchar *host_escaped;
+      host_escaped = g_regex_escape_string ((uri->host)+2, -1);
+      host_pattern = g_strdup_printf ("[a-zA-Z0-9\\-\\.]*%s", host_escaped);
+      g_free (host_escaped);
+    } else {
+      host_pattern = g_regex_escape_string (uri->host, -1);
+    }
+    g_string_append (buffer, "|(");
+    g_string_append (buffer, scheme_pattern);
+    g_string_append (buffer, "\\:\\/\\/");
+    g_string_append (buffer, host_pattern);
+    if (uri->path) {
+      gchar *path_escaped;
+
+      path_escaped = g_regex_escape_string (uri->path, -1);
+      g_string_append (buffer, path_escaped);
+      g_free (path_escaped);
+    } else {
+      g_string_append (buffer, "\\/");
+    }
+    g_string_append (buffer, ".*)");
+    g_free (host_pattern);
+    soup_uri_free (uri);
+  }
+  
+  return g_string_free (buffer, FALSE);
+  
+}
+
 static gboolean
 parse_crx_manifest (const char *manifest_data,
                     char **name,
                     char **web_url,
+                    char **url_regex,
                     char **local_path,
                     char **description,
                     char **update_url,
@@ -1947,6 +2017,7 @@ parse_crx_manifest (const char *manifest_data,
   JsonParser *parser;
   char *_name = NULL;
   char *_web_url = NULL;
+  char *_url_regex = NULL;
   char *_local_path = NULL;
   char *_description = NULL;
   char *_update_url = NULL;
@@ -1973,9 +2044,16 @@ parse_crx_manifest (const char *manifest_data,
     }
       
     if (_error == NULL) {
+      GList *url_list;
       _description = ephy_json_path_query_string ("$.description", root_node);
       _update_url = ephy_json_path_query_string ("$.update_url", root_node);
       _best_icon_path = ephy_json_path_query_best_icon ("$.icons", root_node);
+      url_list = ephy_json_path_query_string_list ("$.app.urls", root_node);
+      if (url_list && _web_url) {
+        _url_regex = build_hosted_apps_url_regex (_web_url, url_list);
+      }
+      g_list_foreach (url_list, (GFunc) g_free, NULL);
+      g_list_free (url_list);
     }
   }
 
@@ -1995,6 +2073,11 @@ parse_crx_manifest (const char *manifest_data,
     *web_url = _web_url;
   else
     g_free (_web_url);
+
+  if (url_regex)
+    *url_regex = _url_regex;
+  else
+    g_free (_url_regex);
 
   if (local_path)
     *local_path = _local_path;
@@ -2048,9 +2131,10 @@ on_crx_extract (GObject *object,
         char *name = NULL;
         char *description = NULL;
         char *web_url = NULL;
+        char *url_regex = NULL;
         char *local_path = NULL;
         char *best_icon_path = NULL;
-        is_ok = parse_crx_manifest (install_data->manifest_data, &name, &web_url, &local_path, &description, NULL, &best_icon_path, &error);
+        is_ok = parse_crx_manifest (install_data->manifest_data, &name, &web_url, &url_regex, &local_path, &description, NULL, &best_icon_path, &error);
         if (is_ok) {
           ephy_web_application_set_name (install_data->app, name);
           ephy_web_application_set_description (install_data->app, description);
@@ -2069,12 +2153,16 @@ on_crx_extract (GObject *object,
             ephy_web_application_set_launch_path (install_data->app, local_path);
           } else {
             ephy_web_application_set_full_uri (install_data->app, web_url);
+            if (url_regex) {
+              ephy_web_application_set_uri_regex (install_data->app, url_regex);
+            }
           }
           install_data->best_icon_path = best_icon_path;
         }
         g_free (name);
         g_free (description);
         g_free (web_url);
+        g_free (url_regex);
         g_free (local_path);
       }
     }
@@ -2336,6 +2424,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   char *icon_data = NULL;
   char *localized_name = NULL;
   char *web_url = NULL;
+  char *url_regex = NULL;
   char *local_path = NULL;
   char *update_url = NULL;
   char *best_icon_path = NULL;
@@ -2371,7 +2460,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (*exception == NULL) {
       manifest = ephy_js_string_to_utf8 (manifest_string);
 
-      parse_crx_manifest (manifest, &name, &web_url, &local_path, &description, &update_url, &best_icon_path, NULL);
+      parse_crx_manifest (manifest, &name, &web_url, &url_regex, &local_path, &description, &update_url, &best_icon_path, NULL);
     }
   }
 
@@ -2433,6 +2522,8 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
       ephy_web_application_set_launch_path (app, local_path);
     } else {
       ephy_web_application_set_full_uri (app, web_url);
+      if (url_regex)
+        ephy_web_application_set_uri_regex (app, url_regex);
     }
 
     ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
@@ -2544,6 +2635,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   g_free (icon_data);
   g_free (localized_name);
   g_free (web_url);
+  g_free (url_regex);
   g_free (local_path);
   g_free (best_icon_path);
   if (*exception) return JSValueMakeNull (context);
@@ -2936,9 +3028,12 @@ chrome_management_uninstall (JSContextRef context,
   }
 
   if (argumentCount == 2) {
-    callback_function = JSValueToObject (context, arguments[0], exception);
-    if (!*exception && !JSObjectIsFunction (context, callback_function)) {
-      ephy_js_set_exception (context, exception, _("Callback parameter is not a function."));
+    if (JSValueIsObject (context, arguments[1])) {
+      callback_function = JSValueToObject (context, arguments[1], exception);
+      
+      if (!*exception && !JSObjectIsFunction (context, callback_function)) {
+        callback_function = NULL;
+      }
     }
   }
   if (*exception) return JSValueMakeNull (context);
@@ -3021,12 +3116,9 @@ chrome_management_launch_app (JSContextRef context,
   }
 
   if (argumentCount == 2) {
-    if (JSValueIsObject (context, arguments[1])) {
-      callback_function = JSValueToObject (context, arguments[1], exception);
-      
-      if (!*exception && !JSObjectIsFunction (context, callback_function)) {
-        callback_function = NULL;
-      }
+    callback_function = JSValueToObject (context, arguments[0], exception);
+    if (!*exception && !JSObjectIsFunction (context, callback_function)) {
+      ephy_js_set_exception (context, exception, _("Callback parameter is not a function."));
     }
   }
   if (*exception) return JSValueMakeNull (context);

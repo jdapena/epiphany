@@ -62,6 +62,7 @@ struct _EphyWebApplicationPrivate
   char *author;
   char *author_url;
   char *origin;
+  char *uri_regex;
   char *install_origin;
   char *launch_path;
   char *install_date;
@@ -78,6 +79,7 @@ enum
   PROP_AUTHOR,
   PROP_AUTHOR_URL,
   PROP_ORIGIN,
+  PROP_URI_REGEX,
   PROP_INSTALL_ORIGIN,
   PROP_LAUNCH_PATH,
   PROP_INSTALL_DATE,
@@ -112,6 +114,9 @@ ephy_web_application_get_property (GObject    *object,
     break;
   case PROP_ORIGIN:
     g_value_set_string (value, priv->origin);
+    break;
+  case PROP_URI_REGEX:
+    g_value_set_string (value, priv->uri_regex);
     break;
   case PROP_INSTALL_ORIGIN:
     g_value_set_string (value, priv->install_origin);
@@ -158,6 +163,9 @@ ephy_web_application_set_property (GObject      *object,
     break;
   case PROP_ORIGIN:
     ephy_web_application_set_origin (app, g_value_get_string (value));
+    break;
+  case PROP_URI_REGEX:
+    ephy_web_application_set_uri_regex (app, g_value_get_string (value));
     break;
   case PROP_INSTALL_ORIGIN:
     ephy_web_application_set_install_origin (app, g_value_get_string (value));
@@ -337,6 +345,39 @@ ephy_web_application_set_origin (EphyWebApplication *app,
 }
 
 /**
+ * ephy_web_application_get_uri_regex:
+ * @app: an #EphyWebApplication
+ *
+ * Obtains the uri regular expression of the application. See more
+ * details on ephy_web_application_set_uri_regex()
+ *
+ * Returns: a string
+ **/
+const char *
+ephy_web_application_get_uri_regex (EphyWebApplication *app)
+{
+  return app->priv->uri_regex;
+}
+
+/**
+ * ephy_web_application_set_uri_regex:
+ * @app: an #EphyWebApplication
+ * @uri_regex: a string
+ *
+ * Sets the @uri_regex of @app. It limits the set of addresses
+ * considered inside the application. Overrides the @origin for
+ * this purpose
+ **/
+void
+ephy_web_application_set_uri_regex (EphyWebApplication *app,
+				    const char *uri_regex)
+{
+  g_free (app->priv->uri_regex);
+  app->priv->uri_regex = g_strdup (uri_regex);
+  g_object_notify (G_OBJECT (app), "uri-regex");
+}
+
+/**
  * ephy_web_application_match_uri:
  * @app: an #EphyWebApplication
  * @uri: a string
@@ -348,16 +389,22 @@ gboolean
 ephy_web_application_match_uri (EphyWebApplication *app,
 				const char *uri)
 {
-  SoupURI *app_origin, *soup_uri;
   gboolean is_match = FALSE;
 
-  app_origin = soup_uri_new (app->priv->origin);
-  soup_uri = soup_uri_new (uri);
+  if (app->priv->uri_regex && *(app->priv->uri_regex)) {
+    is_match = g_regex_match_simple (app->priv->uri_regex, uri,
+				     G_REGEX_CASELESS, 0);
+  } else {
+    SoupURI *app_origin, *soup_uri;
 
-  is_match = g_str_equal (soup_uri->host, app_origin->host);
+    app_origin = soup_uri_new (app->priv->origin);
+    soup_uri = soup_uri_new (uri);
 
-  soup_uri_free (soup_uri);
-  soup_uri_free (app_origin);
+    is_match = g_str_equal (soup_uri->host, app_origin->host);
+
+    soup_uri_free (soup_uri);
+    soup_uri_free (app_origin);
+  }
 
   return is_match;
 }
@@ -532,6 +579,7 @@ ephy_web_application_load (EphyWebApplication *app,
       char **custom_keys;
       gsize length = 0, i;
 
+      priv->uri_regex = g_key_file_get_string (key, "Application", "URIRegEx", NULL);
       priv->launch_path = g_key_file_get_string (key, "Application", "LaunchPath", NULL);
       priv->install_origin = g_key_file_get_string (key, "Application", "InstallOrigin", NULL);
       priv->description = g_key_file_get_string (key, "Application", "Description", NULL);
@@ -713,6 +761,7 @@ create_desktop_and_metadata_files (EphyWebApplication *app,
 
   if (priv->launch_path) g_key_file_set_value (metadata_file, "Application", "LaunchPath", priv->launch_path);
   g_key_file_set_value (metadata_file, "Application", "Origin", priv->origin);
+  if (priv->uri_regex) g_key_file_set_value (metadata_file, "Application", "URIRegEx", priv->uri_regex);
   if (priv->install_origin) g_key_file_set_value (metadata_file, "Application", "InstallOrigin", priv->install_origin);
 
   g_key_file_set_value (desktop_file, "Desktop Entry", "StartupNotify", "true");
@@ -1022,6 +1071,21 @@ ephy_web_application_class_init (EphyWebApplicationClass *klass)
                                                         G_PARAM_STATIC_BLURB));
 
   /**
+   * EphyWebApplication::uri-regex:
+   *
+   * URI regex pattern of the application.
+   */
+  g_object_class_install_property (object_class, PROP_URI_REGEX,
+                                   g_param_spec_string ("uri-regex",
+                                                        "URI regex pattern",
+                                                        "The URI regex pattern of the application. Anything outside goes to browser",
+                                                        NULL,
+                                                        G_PARAM_READWRITE |
+                                                        G_PARAM_STATIC_NAME |
+                                                        G_PARAM_STATIC_NICK |
+                                                        G_PARAM_STATIC_BLURB));
+
+  /**
    * EphyWebApplication::install_origin:
    *
    * Install origin of the application.
@@ -1110,6 +1174,7 @@ ephy_web_application_init (EphyWebApplication *app)
   app->priv->author = NULL;
   app->priv->author_url = NULL;
   app->priv->origin = NULL;
+  app->priv->uri_regex = NULL;
   app->priv->install_origin = NULL;
   app->priv->launch_path = NULL;
   app->priv->profile_dir = NULL;

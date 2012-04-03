@@ -239,6 +239,36 @@ ephy_json_path_query_string (const char *path_query,
   return result;
 }
 
+GList *
+ephy_json_path_query_string_list (const char *path_query,
+				  JsonNode *node)
+{
+  JsonNode *found_node;
+  GList *result = NULL;
+
+  found_node = json_path_query (path_query, node, NULL);
+  if (found_node) {
+    if (JSON_NODE_HOLDS_ARRAY (found_node)) {
+      JsonArray *array;
+      int i;
+
+      array = json_node_get_array (found_node);
+      if (json_array_get_length (array) > 0 && JSON_NODE_HOLDS_ARRAY (json_array_get_element (array, 0))) {
+	JsonArray *inner_array;
+
+	inner_array = json_array_get_array_element (array, 0);
+
+	for (i = 0; i < json_array_get_length (inner_array); i++) {
+	  result = g_list_append (result, g_strdup (json_array_get_string_element (inner_array, i)));
+	}
+      }
+    }
+    json_node_free (found_node);
+  }
+
+  return result;
+}
+
 char *
 ephy_json_path_query_best_icon (const char *path_query,
                                 JsonNode *node)

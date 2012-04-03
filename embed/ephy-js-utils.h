@@ -95,6 +95,8 @@ void          _ephy_js_set_exception                (JSContextRef context,
 
 char *        ephy_json_path_query_string          (const char *path_query,
                                                     JsonNode *node);
+GList *       ephy_json_path_query_string_list     (const char *path_query,
+                                                    JsonNode *node);
 char *        ephy_json_path_query_best_icon       (const char *path_query,
                                                     JsonNode *node);
 						    
