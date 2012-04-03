@@ -2171,7 +2171,7 @@ policy_decision_required_cb (WebKitWebView *web_view,
 		
 		if (app != NULL)
 		{
-			is_app_url = ephy_web_application_match_uri (app, webkit_web_view_get_uri (web_view));
+			is_app_url = ephy_web_application_match_uri (app, uri);
 		}
 		else
 		{
