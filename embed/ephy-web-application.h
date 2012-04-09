@@ -76,6 +76,7 @@ typedef enum
 
 /* Custom keys */
 #define EPHY_WEB_APPLICATION_CHROME_ID "chrome-id"
+#define EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE "chrome-default-locale"
 
 
 typedef struct _EphyWebApplication EphyWebApplication;

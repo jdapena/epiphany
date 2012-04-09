@@ -2613,6 +2613,9 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (id) {
       ephy_web_application_set_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID, id);
     }
+    if (default_locale) {
+      ephy_web_application_set_custom_key (app, EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE, default_locale);
+    }
     install_data->error = NULL;
     install_data->manifest_data = g_strdup (manifest);
     install_data->update_url = update_url?g_strdup(update_url):DEFAULT_CHROME_WEBSTORE_CRX_UPDATE_PATH;
@@ -3262,6 +3265,128 @@ NULL,
 NULL
 };
 
+static JSValueRef
+chrome_i18n_get_message (JSContextRef context,
+                         JSObjectRef function,
+                         JSObjectRef thisObject,
+                         size_t argumentCount,
+                         const JSValueRef arguments[],
+                         JSValueRef *exception)
+{
+  EphyWebApplication *app;
+  char *key_id;
+  char **substitutions = NULL;
+  char *translation = NULL;
+
+  app = ephy_web_application_new ();
+  if (!ephy_web_application_load (app, ephy_dot_dir (), NULL)) {
+    g_object_unref (app);
+    return JSValueMakeNull (context);
+  }
+  
+  if (argumentCount > 2 || (argumentCount == 0) || !JSValueIsString(context, arguments[0])){
+    ephy_js_set_exception (context, exception, _("Invalid arguments."));
+    return JSValueMakeNull (context);
+  } else {
+    JSStringRef key_id_string;
+
+    key_id_string = JSValueToStringCopy (context, arguments[0], exception);
+    key_id = ephy_js_string_to_utf8 (key_id_string);
+    JSStringRelease (key_id_string);
+  }
+  if (*exception) return JSValueMakeNull (context);
+
+  if (argumentCount == 2) {
+    if (JSValueIsString (context, arguments[1])) {
+      JSStringRef js_string;
+      
+      js_string = JSValueToStringCopy (context, arguments[1], exception);
+      substitutions = g_new0 (char *, 2);
+      substitutions[0] = ephy_js_string_to_utf8 (js_string);
+      substitutions[1] = NULL;
+      JSStringRelease (js_string);
+    } else if (JSValueIsObject (context, arguments[1])) {
+      JSObjectRef array_object;
+      JSValueRef length_value;
+      array_object = JSValueToObject (context, arguments[1], exception);
+      length_value = ephy_js_object_get_property (context, array_object, "length", exception);
+      if (length_value && JSValueIsNumber (context, length_value)) {
+        int i, length;
+        
+        length = JSValueToNumber (context, length_value, exception);
+        substitutions = g_new0 (char *, length + 1);
+        substitutions[length] = NULL;
+        for (i = 0; i < length; i++) {
+          JSValueRef i_value;
+          substitutions[i] = NULL;
+          
+          i_value = JSObjectGetPropertyAtIndex (context, array_object, i, exception);
+          if (JSValueIsString (context, i_value)) {
+            JSStringRef i_str;
+            
+            i_str = JSValueToStringCopy (context, i_value, exception);
+            substitutions[i] = ephy_js_string_to_utf8 (i_str);
+            JSStringRelease (i_str);
+          }
+        }
+      }
+    }
+  }
+  if (*exception) return JSValueMakeNull (context);
+
+  if (key_id) {
+    char *contents_path;
+
+    contents_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
+    translation = crx_get_translation (contents_path, key_id, ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE));
+    g_free (contents_path);
+  }
+
+  g_object_unref (app);
+  {
+    JSStringRef result_string;
+    JSValueRef result_value;
+    
+    result_string = JSStringCreateWithUTF8CString (translation?translation:key_id);
+    result_value = JSValueMakeString (context, result_string);
+    JSStringRelease (result_string);
+
+    return result_value;
+  }
+
+}
+
+static const JSStaticFunction chrome_i18n_class_staticfuncs[] =
+{
+{ "getMessage", chrome_i18n_get_message, kJSPropertyAttributeNone },
+/* { "getAcceptedLanguages", chrome_i18n_get_accepted_languages, kJSPropertyAttributeNone }, */
+{ NULL, NULL, 0 }
+};
+
+static const JSClassDefinition chrome_i18n_class_def =
+{
+0,
+kJSClassAttributeNone,
+"EphyChromeI18nClass",
+NULL,
+
+NULL,
+chrome_i18n_class_staticfuncs,
+
+NULL,
+NULL,
+
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL
+};
+
 void
 ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
 {
@@ -3298,11 +3423,15 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
   JSValueRef on_installed_value;
   JSValueRef on_uninstalled_value;
 
+  char *location;
+
   if (!g_settings_get_boolean (EPHY_SETTINGS_WEB,
                                EPHY_PREFS_WEB_ENABLE_CHROME_APPS))
     return;
 
   global_obj = JSContextGetGlobalObject(context);
+
+  location = ephy_js_context_get_location (context, &exception);
 
   chrome_obj = JSObjectMake (context, NULL, NULL);
   ephy_js_object_set_property_from_value (context, global_obj,
@@ -3350,4 +3479,16 @@ ephy_web_application_setup_chrome_api (JSGlobalContextRef context)
                                             "onUninstalled", on_uninstalled_value,
                                             &exception);
   }
+
+  if (g_str_has_prefix (location, "chrome-extension://")) {
+    JSClassRef chrome_i18n_class;
+    JSObjectRef chrome_i18n_obj;
+
+    chrome_i18n_class = JSClassCreate (&chrome_i18n_class_def);
+    chrome_i18n_obj = JSObjectMake (context, chrome_i18n_class, context);
+    ephy_js_object_set_property_from_value (context, chrome_obj,
+                                            "i18n", chrome_i18n_obj,
+                                            &exception);
+  }
+
 }
