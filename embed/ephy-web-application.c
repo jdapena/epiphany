@@ -1489,9 +1489,10 @@ ephy_web_application_set_full_uri (EphyWebApplication *app,
   g_free (priv->launch_path);
   priv->launch_path = soup_uri_to_string (uri, TRUE);
 
-  if (g_strcmp0(priv->launch_path, "/") == 0) {
-    g_free (priv->launch_path);
-    priv->launch_path = g_strdup ("");
+  if (g_str_has_prefix (priv->launch_path, "/")) {
+    char *old_launch_path = priv->launch_path;
+    priv->launch_path = g_strdup (priv->launch_path + 1);
+    g_free (old_launch_path);
   }
 
   host_uri = soup_uri_copy_host (uri);
