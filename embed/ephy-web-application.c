@@ -401,7 +401,7 @@ ephy_web_application_match_uri (EphyWebApplication *app,
     app_origin = soup_uri_new (app->priv->origin);
     soup_uri = soup_uri_new (uri);
 
-    is_match = g_str_equal (soup_uri->host, app_origin->host);
+    is_match = g_strcmp0 (soup_uri->host, app_origin->host) ==0;
 
     soup_uri_free (soup_uri);
     soup_uri_free (app_origin);
