@@ -519,6 +519,56 @@ ephy_web_application_set_permissions (EphyWebApplication *app,
 
 }
 
+static char *
+canon_permission_string (const char *str)
+{
+  GString *result;
+  const char *p;
+
+  result = g_string_new(NULL);
+  for (p = str; p != NULL && *p != '\0'; p++) {
+    if (*p == ' ' || *p == '_' || *p == '-')
+      continue;
+    else if (g_ascii_isupper (*p))
+      g_string_append_c (result, g_ascii_tolower (*p));
+    else
+      g_string_append_c (result, *p);
+  }
+  return g_string_free (result, FALSE);
+}
+
+/**
+ * ephy_web_application_match_permission:
+ * @app: an #EphyWebApplication
+ * @permission: a string
+ *
+ * Checks if @permission is in the list of permissions warranted by app for its
+ * origin and uri regex.
+ *
+ * Returns: %TRUE if granted, %FALSE otherwise
+ */
+gboolean
+ephy_web_application_match_permission (EphyWebApplication *app,
+				       const char *permission)
+{
+  char *canon_permission;
+  GList *node;
+  gboolean found = FALSE;
+
+  canon_permission = canon_permission_string (permission);
+  for (node = app->priv->permissions; !found && node != NULL; node = g_list_next (node)) {
+    char *canon_node;
+
+    canon_node = canon_permission_string ((char *) node->data);
+    if (g_strcmp0 (canon_node, canon_permission) == 0)
+      found = TRUE;
+    g_free (canon_node);
+  }
+  g_free (canon_permission);
+
+  return found;
+}
+
 EphyWebApplicationStatus
 ephy_web_application_get_status (EphyWebApplication *app)
 {

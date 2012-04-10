@@ -1829,7 +1829,23 @@ window_object_cleared_cb (WebKitWebView *web_view,
                           gpointer window_object,
                           gpointer userdata)
 {
+  EphyWebApplication *app;
+
   JSGlobalContextRef js_context = webkit_web_frame_get_global_context (frame);
+
+  app = ephy_embed_shell_get_application (ephy_embed_shell_get_default ());
+  if (app) {
+    if (ephy_web_application_match_permission (app,
+                                               "unlimitedStorage")) {
+      WebKitSecurityOrigin *security_origin;
+
+      security_origin = webkit_web_frame_get_security_origin (frame);
+      if (ephy_web_application_match_uri (app, webkit_web_frame_get_uri (frame))) {
+        webkit_security_origin_set_web_database_quota (security_origin, G_MAXUINT64);
+      }
+
+    }
+  }
   ephy_web_application_setup_mozilla_api (js_context);
   ephy_web_application_setup_chrome_api (js_context);
 }

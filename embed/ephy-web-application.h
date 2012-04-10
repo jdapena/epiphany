@@ -130,6 +130,8 @@ void                ephy_web_application_set_uri_regex   (EphyWebApplication *ap
 GList *             ephy_web_application_get_permissions (EphyWebApplication *app);
 void                ephy_web_application_set_permissions (EphyWebApplication *app,
 							  GList *permissions);
+gboolean            ephy_web_application_match_permission (EphyWebApplication *app,
+							   const char *permission);
 gboolean            ephy_web_application_match_uri       (EphyWebApplication *app,
 							  const char *uri);
 const char *        ephy_web_application_get_install_origin (EphyWebApplication *app);
