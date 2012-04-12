@@ -48,10 +48,6 @@
 
 #define DEFAULT_CHROME_WEBSTORE_CRX_UPDATE_PATH "http://clients2.google.com/service/update2/crx"
 
-static JSValueRef chrome_app_object_from_application (JSContextRef context, 
-                                                      EphyWebApplication *app, 
-                                                      const char *filter_id, 
-                                                      JSValueRef *exception);
 
 /* Common implementation:
  *
@@ -1350,6 +1346,128 @@ ephy_chrome_apps_install_from_store (const char *app_id,
   if (icon_pixbuf) g_object_unref (icon_pixbuf);
 }
 
+/* JS common code */
+static JSValueRef
+chrome_app_object_from_application (JSContextRef context, EphyWebApplication *app, const char *filter_id, JSValueRef *exception)
+{
+  GFile *manifest_file = NULL;
+  gboolean is_ok = TRUE;
+  JSObjectRef result = NULL;
+  char *manifest_path;
+  gboolean crx_less = FALSE;
+  JsonParser *parser = NULL;
+
+  manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
+  manifest_file = g_file_new_for_path (manifest_path);
+    
+  is_ok = g_file_query_exists (manifest_file, NULL);
+  g_object_unref (manifest_file);
+  if (!is_ok) {
+    g_free (manifest_path);
+
+    manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_MANIFEST);
+    manifest_file = g_file_new_for_path (manifest_path);
+    
+    is_ok = g_file_query_exists (manifest_file, NULL);
+    g_object_unref (manifest_file);
+    if (is_ok) crx_less = TRUE;
+  }
+  if (is_ok) {
+    parser = json_parser_new ();
+    is_ok = json_parser_load_from_file (parser, manifest_path, NULL);
+  }
+
+  if (is_ok) {
+    result = JSObjectMake (context, NULL, NULL);
+    
+    {
+      const char *id;
+      id = ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID);
+      is_ok = crx_less || id;
+      if (is_ok && id) {
+        ephy_js_object_set_property_from_string (context, result,
+                                                 "id", id, exception);
+        is_ok = (*exception == NULL);
+      }
+    }
+
+    is_ok = is_ok && ephy_web_application_get_name (app);
+    if (is_ok) {
+      ephy_js_object_set_property_from_string (context, result,
+                                               "name", ephy_web_application_get_name (app),
+                                               exception);
+      is_ok = (*exception == NULL);
+    }
+
+    if (is_ok && ephy_web_application_get_description (app)) {
+      ephy_js_object_set_property_from_string (context, result,
+                                               "description", ephy_web_application_get_description (app),
+                                               exception);
+      is_ok = (*exception == NULL);
+    }
+    
+    if (is_ok) {
+      JsonNode *root_node;
+      char *query_result;
+
+      is_ok = crx_less;
+      root_node = json_parser_get_root (parser);
+
+      query_result = ephy_json_path_query_string ("$.version", root_node);
+      is_ok = crx_less || query_result;
+      if (query_result) {
+        ephy_js_object_set_property_from_string (context, result,
+                                                 "version", query_result,
+                                                 exception);
+        if (is_ok && query_result) {
+          is_ok = (*exception == NULL);
+        }
+        g_free (query_result);
+      }
+    }
+    
+    if (is_ok) {
+      ephy_js_object_set_property_from_boolean (context, result,
+                                                "mayDisabled", TRUE, exception);
+      is_ok = (*exception == NULL);
+    }
+
+    if (is_ok) {
+      ephy_js_object_set_property_from_boolean (context, result,
+                                                "enabled", TRUE, exception);
+      is_ok = (*exception == NULL);
+    }
+
+    if (is_ok) {
+      ephy_js_object_set_property_from_boolean (context, result,
+                                                "isApp", TRUE, exception);
+      is_ok = (*exception == NULL);
+    }
+
+    if (is_ok) {
+      char *full_uri;
+      
+      full_uri = ephy_web_application_get_full_uri (app);
+      if (full_uri) {
+        ephy_js_object_set_property_from_string (context, result,
+                                                 "appLaunchUrl", full_uri,
+                                                 exception);
+        g_free (full_uri);
+        is_ok = (*exception == NULL);
+      }
+    }
+  }
+  g_free (manifest_path);
+  if (parser)
+    g_object_unref (parser);
+
+  if (*exception || !is_ok) {
+    return JSValueMakeNull (context);
+  } else {
+    return result;
+  }
+}
+
 /* chrome.app.isInstalled: common method */
 static JSValueRef
 chrome_app_get_is_installed (JSContextRef context,
@@ -1904,127 +2022,6 @@ NULL,
 NULL,
 NULL
 };
-
-static JSValueRef
-chrome_app_object_from_application (JSContextRef context, EphyWebApplication *app, const char *filter_id, JSValueRef *exception)
-{
-  GFile *manifest_file = NULL;
-  gboolean is_ok = TRUE;
-  JSObjectRef result = NULL;
-  char *manifest_path;
-  gboolean crx_less = FALSE;
-  JsonParser *parser = NULL;
-
-  manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
-  manifest_file = g_file_new_for_path (manifest_path);
-    
-  is_ok = g_file_query_exists (manifest_file, NULL);
-  g_object_unref (manifest_file);
-  if (!is_ok) {
-    g_free (manifest_path);
-
-    manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_MANIFEST);
-    manifest_file = g_file_new_for_path (manifest_path);
-    
-    is_ok = g_file_query_exists (manifest_file, NULL);
-    g_object_unref (manifest_file);
-    if (is_ok) crx_less = TRUE;
-  }
-  if (is_ok) {
-    parser = json_parser_new ();
-    is_ok = json_parser_load_from_file (parser, manifest_path, NULL);
-  }
-
-  if (is_ok) {
-    result = JSObjectMake (context, NULL, NULL);
-    
-    {
-      const char *id;
-      id = ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID);
-      is_ok = crx_less || id;
-      if (is_ok && id) {
-        ephy_js_object_set_property_from_string (context, result,
-                                                 "id", id, exception);
-        is_ok = (*exception == NULL);
-      }
-    }
-
-    is_ok = is_ok && ephy_web_application_get_name (app);
-    if (is_ok) {
-      ephy_js_object_set_property_from_string (context, result,
-                                               "name", ephy_web_application_get_name (app),
-                                               exception);
-      is_ok = (*exception == NULL);
-    }
-
-    if (is_ok && ephy_web_application_get_description (app)) {
-      ephy_js_object_set_property_from_string (context, result,
-                                               "description", ephy_web_application_get_description (app),
-                                               exception);
-      is_ok = (*exception == NULL);
-    }
-    
-    if (is_ok) {
-      JsonNode *root_node;
-      char *query_result;
-
-      is_ok = crx_less;
-      root_node = json_parser_get_root (parser);
-
-      query_result = ephy_json_path_query_string ("$.version", root_node);
-      is_ok = crx_less || query_result;
-      if (query_result) {
-        ephy_js_object_set_property_from_string (context, result,
-                                                 "version", query_result,
-                                                 exception);
-        if (is_ok && query_result) {
-          is_ok = (*exception == NULL);
-        }
-        g_free (query_result);
-      }
-    }
-    
-    if (is_ok) {
-      ephy_js_object_set_property_from_boolean (context, result,
-                                                "mayDisabled", TRUE, exception);
-      is_ok = (*exception == NULL);
-    }
-
-    if (is_ok) {
-      ephy_js_object_set_property_from_boolean (context, result,
-                                                "enabled", TRUE, exception);
-      is_ok = (*exception == NULL);
-    }
-
-    if (is_ok) {
-      ephy_js_object_set_property_from_boolean (context, result,
-                                                "isApp", TRUE, exception);
-      is_ok = (*exception == NULL);
-    }
-
-    if (is_ok) {
-      char *full_uri;
-      
-      full_uri = ephy_web_application_get_full_uri (app);
-      if (full_uri) {
-        ephy_js_object_set_property_from_string (context, result,
-                                                 "appLaunchUrl", full_uri,
-                                                 exception);
-        g_free (full_uri);
-        is_ok = (*exception == NULL);
-      }
-    }
-  }
-  g_free (manifest_path);
-  if (parser)
-    g_object_unref (parser);
-
-  if (*exception || !is_ok) {
-    return JSValueMakeNull (context);
-  } else {
-    return result;
-  }
-}
 
 static JSValueRef
 chrome_app_objects_from_id (JSContextRef context,
