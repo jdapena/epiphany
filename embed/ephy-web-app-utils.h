@@ -35,8 +35,6 @@ G_BEGIN_DECLS
 typedef gboolean (*EphyWebApplicationInstallCallback) (gint dialog_response,
                                                        EphyWebApplication *app,
                                                        gpointer userdata);
-typedef void     (*EphyWebApplicationInstallManifestCallback) (GError *error,
-                                                               gpointer userdata);
 
 #define EPHY_WEB_APP_PREFIX "app-"
 #define EPHY_WEB_APP_ICON_NAME "app-icon.png"
@@ -52,13 +50,6 @@ void     ephy_web_application_show_install_dialog (GtkWindow *window,
                                                    EphyWebApplicationInstallCallback callback,
                                                    gpointer userdata);
 
-void     ephy_web_application_install_manifest (GtkWindow *window,
-						const char *origin,
-						const char *manifest_path,
-						const char *receipt,
-                                                const char *install_origin,
-                                                EphyWebApplicationInstallManifestCallback callback,
-                                                gpointer userdata);
 void     ephy_web_application_install_crx_extension (const char *origin,
                                                      const char *crx_path);
 

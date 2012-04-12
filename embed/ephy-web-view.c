@@ -1847,7 +1847,7 @@ window_object_cleared_cb (WebKitWebView *web_view,
 
     }
   }
-  ephy_web_application_setup_mozilla_api (js_context);
+  ephy_open_web_apps_setup_js_api (js_context);
   ephy_web_application_setup_chrome_api (js_context);
 }
 
