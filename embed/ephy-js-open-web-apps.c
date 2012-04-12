@@ -95,7 +95,7 @@ install_manifest_cb (gint response,
       char *manifest_install_path;
 
       origin_manifest = g_file_new_for_path (install_manifest_data->manifest_path);
-      manifest_install_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_MOZILLA_MANIFEST);
+      manifest_install_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_OPEN_WEB_APPS_MANIFEST);
       destination_manifest = g_file_new_for_path (manifest_install_path);
 
       result = g_file_copy (origin_manifest, destination_manifest, 
@@ -363,6 +363,51 @@ ephy_open_web_apps_install_manifest_from_uri (const char *url,
   webkit_download_start (download);
 }
 
+static EphyWebApplication *
+ephy_open_web_apps_get_application_from_origin (const char *origin)
+{
+  EphyWebApplication *app;
+
+  app = ephy_web_application_get_self ();
+  if (app && !is_open_web_app (app)) {
+    g_object_unref  (app);
+    app = NULL;
+  }
+  if (!app) {
+    GList *origin_applications, *node;
+    origin_applications = ephy_web_application_get_applications_from_origin (origin);
+    for (node = origin_applications; node != NULL; node = g_list_next (node)) {
+      if (is_open_web_app (EPHY_WEB_APPLICATION (node->data))) {
+	app = EPHY_WEB_APPLICATION (node->data);
+	g_object_ref (app);
+	break;
+      }
+    }
+    ephy_web_application_free_applications_list (origin_applications);
+  }
+
+  return app;
+}
+
+static GList *
+ephy_open_web_apps_get_applications_from_install_origin (const char *install_origin)
+{
+  GList *origin_applications, *node;
+  GList *result = NULL;
+
+  origin_applications = ephy_web_application_get_applications_from_install_origin (install_origin);
+  for (node = origin_applications; node != NULL; node = g_list_next (node)) {
+    EphyWebApplication *app = (EphyWebApplication *) node->data;
+    if (is_open_web_app (app)) {
+      g_object_ref (app);
+      result = g_list_prepend (result, app);
+    }
+  }
+  ephy_web_application_free_applications_list (origin_applications);
+
+  return result;
+}
+
 static JSValueRef
 mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *app, JSValueRef *exception)
 {
@@ -445,37 +490,6 @@ mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *a
   }
 }
 
-static JSValueRef mozapps_app_object_from_origin (JSContextRef context, const char *origin, JSValueRef *exception)
-{
-  EphyWebApplication *app;
-  JSValueRef result;
-
-  app = ephy_web_application_new ();
-  if (!ephy_web_application_load (app, ephy_dot_dir (), NULL)) {
-    GList *origin_applications, *node;
-    g_object_unref (app);
-    app = NULL;
-    origin_applications = ephy_web_application_get_applications_from_origin (origin);
-    for (node = origin_applications; node != NULL; node = g_list_next (node)) {
-      if (is_open_web_app (EPHY_WEB_APPLICATION (node->data))) {
-        app = EPHY_WEB_APPLICATION (node->data);
-        g_object_ref (app);
-        break;
-      }
-    }
-    ephy_web_application_free_applications_list (origin_applications);
-  }
-
-  if (app == NULL) {
-    result = JSValueMakeNull (context);
-  } else {
-    result = mozapps_app_object_from_application (context, app, exception);
-    g_object_unref (app);
-  }
-  
-  return result;
-}
-
 static JSValueRef
 mozapps_am_installed (JSContextRef context,
                       JSObjectRef function,
@@ -519,7 +533,15 @@ mozapps_am_installed (JSContextRef context,
       ephy_js_set_exception (context, exception, _("Couldn't get context origin."));
       goto amInstalledFinish;
     } else {
-      callback_parameter = mozapps_app_object_from_origin (context, origin, exception);
+      EphyWebApplication *app;
+
+      app = ephy_open_web_apps_get_application_from_origin (origin);
+      if (app == NULL) {
+	callback_parameter = JSValueMakeNull (context);
+      } else {
+	callback_parameter = mozapps_app_object_from_application (context, app, exception);
+	g_object_unref (app);
+      }
     }
     
     g_free (origin);
@@ -533,44 +555,6 @@ mozapps_am_installed (JSContextRef context,
     } else {
       return JSValueMakeNull (context);
     }
-  }
-}
-
-static JSValueRef mozapps_app_objects_from_install_origin (JSContextRef context, const char *origin, JSValueRef *exception)
-{
-  GList *origin_applications, *node;
-  GList *js_objects_list = NULL;
-  int array_count = 0;
-  JSValueRef *array_arguments = NULL;
-
-  origin_applications = ephy_web_application_get_applications_from_install_origin (origin);
-  for (node = origin_applications; node != NULL; node = g_list_next (node)) {
-    EphyWebApplication *app = (EphyWebApplication *) node->data;
-    JSValueRef app_object;
-
-    app_object = mozapps_app_object_from_application (context, app, exception);
-    if (app_object != NULL && ! JSValueIsNull (context, app_object)) {
-      js_objects_list = g_list_append (js_objects_list, JSValueToObject (context, app_object, exception));
-    }
-    if (*exception) {
-      break;
-    }
-  }
-  ephy_web_application_free_applications_list (origin_applications);
-
-  array_count = g_list_length (js_objects_list);
-  if (array_count > 0) {
-    int i = 0;
-    array_arguments = g_malloc0 (sizeof(JSValueRef *) * array_count);
-    for (node = js_objects_list; node != NULL; node = g_list_next (node)) {
-      array_arguments[i] = (JSValueRef) node->data;
-      i++;
-    }
-  }
-  if (*exception) {
-    return JSValueMakeNull (context);
-  } else {
-    return JSObjectMakeArray (context, array_count, array_arguments, exception);
   }
 }
 
@@ -616,7 +600,28 @@ mozapps_get_installed_by (JSContextRef context,
       ephy_js_set_exception (context, exception, _("Couldn't extract context origin."));
       goto getInstalledByFinish;
     } else {
-      callback_parameter = mozapps_app_objects_from_install_origin (context, origin, exception);
+      GList *installed_apps, *node;
+      int i = 0;
+      int array_count = 0;
+      JSValueRef *array_arguments = NULL;
+
+      installed_apps = ephy_open_web_apps_get_applications_from_install_origin (origin);
+      if (installed_apps) {
+	array_count = g_list_length (installed_apps);
+	array_arguments = g_malloc0 (sizeof(JSValueRef *) * g_list_length (installed_apps));
+	i = 0;
+	for (i = 0, node = installed_apps; node != NULL; i++, node = g_list_next (node)) {
+	  EphyWebApplication *app = (EphyWebApplication *) node->data;
+	  array_arguments[i] = mozapps_app_object_from_application (context,
+								    app,
+								    exception);
+	  g_object_unref (app);
+	}
+      }
+      callback_parameter = JSObjectMakeArray (context, 
+					      array_count, array_arguments, 
+					      exception);
+      g_free (array_arguments);
     }
     
     g_free (origin);

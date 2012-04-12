@@ -67,8 +67,6 @@ typedef enum
 /* Files */
 #define EPHY_WEB_APPLICATION_METADATA_FILE "ephy-web-app.metadata"
 #define EPHY_WEB_APPLICATION_DESKTOP_FILE "ephy-web-app.desktop"
-#define EPHY_WEB_APPLICATION_MOZILLA_MANIFEST "ephy-web-app.manifest"
-#define EPHY_WEB_APPLICATION_MOZILLA_RECEIPT "ephy-web-app.receipt"
 #define EPHY_WEB_APPLICATION_APP_ICON "app-icon.png"
 #define EPHY_WEB_APPLICATION_COOKIE_JAR "cookies.sqlite"
 #define EPHY_WEB_APPLICATION_CHROME_MANIFEST "ephy-web-app.chrome-manifest.json"
@@ -168,6 +166,7 @@ void                ephy_web_application_set_custom_key (EphyWebApplication *app
                                                          const char *value);
 
 
+EphyWebApplication * ephy_web_application_get_self (void);
 GList * ephy_web_application_get_applications (void);
 EphyWebApplication * ephy_web_application_from_name (const char *name);
 GList * ephy_web_application_get_applications_from_origin (const char *origin);
