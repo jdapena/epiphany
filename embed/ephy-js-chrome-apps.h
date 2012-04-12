@@ -45,7 +45,7 @@
 
 G_BEGIN_DECLS
 
-void     ephy_chrome_apps_install_crx_extension (const char *origin,
+void     ephy_chrome_apps_install_crx_from_file (const char *origin,
 						 const char *crx_path);
 
 void     ephy_chrome_apps_setup_js_api  (JSGlobalContextRef context);

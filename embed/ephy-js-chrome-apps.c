@@ -346,271 +346,11 @@ ephy_chrome_apps_get_self_crx_less_manifest ()
   return manifest_contents;
 }
 
-/* chrome.app.isInstalled: common method */
-static JSValueRef
-chrome_app_get_is_installed (JSContextRef context,
-                             JSObjectRef object,
-                             JSStringRef propertyName,
-                             JSValueRef *exception)
-{
-  bool is_installed = FALSE;
-
-  is_installed = ephy_chrome_apps_is_self_installed ();
-
-  return is_installed?JSValueMakeBoolean (context, TRUE):JSValueMakeUndefined (context);
-}
-
-/* chrome.app.getDetails: crx-less API */
-static JSValueRef
-chrome_app_get_details (JSContextRef context,
-                        JSObjectRef function,
-                        JSObjectRef thisObject,
-                        size_t argumentCount,
-                        const JSValueRef arguments[],
-                        JSValueRef *exception)
-{
-  char *manifest_contents = NULL;
-  JSValueRef result = NULL;
-
-  if (argumentCount != 0) {
-    ephy_js_set_exception (context, exception, _("Invalid arguments."));
-    return JSValueMakeNull (context);
-  }
-
-  manifest_contents = ephy_chrome_apps_get_self_crx_less_manifest ();
-  if (manifest_contents) {
-    JSStringRef manifest_string;
-
-    manifest_string = JSStringCreateWithUTF8CString (manifest_contents);
-    result = JSValueMakeFromJSONString (context, manifest_string);
-    JSStringRelease (manifest_string);
-
-    g_free (manifest_contents);
-  }
-
-  return result?result:JSValueMakeUndefined (context);
-}
-
-/* chrome.app.install: crx-less API */
-static JSValueRef
-chrome_app_install (JSContextRef context,
-                    JSObjectRef function,
-                    JSObjectRef thisObject,
-                    size_t argumentCount,
-                    const JSValueRef arguments[],
-                    JSValueRef *exception)
-{
-  JSValueRef href_value;
-  JSStringRef href_string;
-  char *window_href = NULL;
-  char *href = NULL;
-
-  if (argumentCount != 0) {
-    ephy_js_set_exception (context, exception, _("Invalid arguments."));
-    return JSValueMakeNull (context);
-  }
-
-  href_value = ephy_js_context_eval_as_function
-    (context,
-     "links = document.getElementsByTagName(\"link\");\n"
-     "for (var i = 0; i < links.length; i++) {\n"
-     "  if (links[i].rel == 'chrome-application-definition' && links[i].href != null) {\n"
-     "    return links[i].href;\n"
-     "    break;\n"
-     "  }\n"
-     "}\n"
-     "return null;",
-     exception);
-  if (*exception) return JSValueMakeNull (context);
-
-  if (!JSValueIsString (context, href_value)) {
-    return JSValueMakeUndefined (context);
-  }
-  href_string = JSValueToStringCopy (context, href_value, exception);
-  if (*exception) return JSValueMakeNull (context);
-
-  href = ephy_js_string_to_utf8 (href_string);
-  JSStringRelease (href_string);
-
-  window_href = ephy_js_context_get_location (context, exception);
-  if (*exception == NULL && window_href == NULL) {
-    ephy_js_set_exception (context, exception, _("Couldn't retrieve context location."));
-  }
-
-  if (window_href && href) {
-    GError *error = NULL;
-
-    ephy_chrome_apps_install_crx_less_manifest_from_uri (href, window_href, &error);
-
-    if (error) {
-      ephy_js_set_exception (context, exception, error->message);
-      g_error_free (error);
-    }
-  }
-
-  g_free (href);
-  g_free (window_href);
-
-  if (*exception) {
-    return JSValueMakeNull (context);
-  } else {
-    return JSValueMakeUndefined (context);
-  }
-}
-
-static const JSStaticValue chrome_app_class_statisvalues[] =
-{
-  { "isInstalled", chrome_app_get_is_installed, NULL, kJSPropertyAttributeReadOnly },
-  { NULL, NULL, NULL, 0 }
-};
-
-static const JSStaticFunction chrome_app_class_staticfuncs[] =
-{
-{ "install", chrome_app_install, kJSPropertyAttributeNone },
-{ "getDetails", chrome_app_get_details, kJSPropertyAttributeNone },
-{ NULL, NULL, 0 }
-};
-
-static const JSClassDefinition chrome_app_class_def =
-{
-0,
-kJSClassAttributeNone,
-"EphyChromeAppClass",
-NULL,
-
-chrome_app_class_statisvalues,
-chrome_app_class_staticfuncs,
-
-NULL,
-NULL,
-
-NULL,
-NULL,
-NULL,
-NULL,
-NULL,
-NULL,
-NULL,
-NULL,
-NULL
-};
-
-static JSValueRef
-chrome_webstore_private_install (JSContextRef context,
-                                 JSObjectRef function,
-                                 JSObjectRef thisObject,
-                                 size_t argumentCount,
-                                 const JSValueRef arguments[],
-                                 JSValueRef *exception)
-{
-  return JSValueMakeNull (context);
-}
-
-typedef struct {
-  EphyWebApplication *app;
-  char *id;
-  char *default_locale;
-  char *manifest_data;
-  char *update_url;
-  char *icon_url;
-  char *best_icon_path;
-  GdkPixbuf *icon_pixbuf;
-  char *crx_file_path;
-  char *crx_contents_path;
-  GError *error;
-  JSGlobalContextRef context;
-  JSObjectRef this_object;
-  JSObjectRef callback_function;
-  JSObjectRef on_installed;
-} ChromeWebstoreInstallData;
-
-static void
-finish_chrome_webstore_install_data (ChromeWebstoreInstallData *install_data)
-{
-  JSValueRef exception = NULL;
-  if (install_data->callback_function && 
-      JSObjectIsFunction (install_data->context, install_data->callback_function)) {
-    JSStringRef result_string;
-    JSValueRef parameters[1];
-
-    if (install_data->error) {
-      if (install_data->error->domain == EPHY_WEB_APPLICATION_ERROR_QUARK) {
-        switch (install_data->error->code) {
-        case EPHY_WEB_APPLICATION_FORBIDDEN:
-          result_string = JSStringCreateWithUTF8CString ("permission_denied"); break;
-        case EPHY_WEB_APPLICATION_CANCELLED:
-          result_string = JSStringCreateWithUTF8CString ("user_cancelled"); break;
-        case EPHY_WEB_APPLICATION_MANIFEST_URL_ERROR:
-        case EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR:
-        case EPHY_WEB_APPLICATION_MANIFEST_INVALID:
-        case EPHY_WEB_APPLICATION_CRX_EXTRACT_FAILED:
-          result_string = JSStringCreateWithUTF8CString ("manifest_error"); break;
-        default:
-          result_string = JSStringCreateWithUTF8CString ("unknown_error");
-        }
-      } else {
-        result_string = JSStringCreateWithUTF8CString ("unknown_error");
-      }
-    } else {
-      result_string = JSStringCreateWithUTF8CString ("");
-    }
-    parameters[0] = JSValueMakeString (install_data->context, result_string);
-    JSStringRelease (result_string);
-
-    if (JSObjectIsFunction (install_data->context, install_data->callback_function)) {
-      JSObjectCallAsFunction (install_data->context, install_data->callback_function, install_data->this_object, 1, parameters, &exception);
-    }
-  }
-
-  if (install_data->on_installed) {
-    JSValueRef app_object;
-
-    app_object = chrome_app_object_from_application (install_data->context, install_data->app, NULL, &exception);
-    if (app_object && ! JSValueIsNull (install_data->context, app_object)) {
-      JSValueRef launch_event_value;
-
-      launch_event_value = ephy_js_object_get_property (install_data->context,
-                                                        install_data->on_installed,
-                                                        "dispatch", &exception);
-
-      if (launch_event_value && JSValueIsObject (install_data->context, launch_event_value)) {
-        JSObjectRef launch_event_function;
-
-        launch_event_function = JSValueToObject (install_data->context, launch_event_value, &exception);
-        if (launch_event_function && JSObjectIsFunction (install_data->context, launch_event_function)) {
-          JSValueRef callback_arguments[1];
-
-          callback_arguments[0] = app_object;
-          JSObjectCallAsFunction (install_data->context, launch_event_function, install_data->on_installed, 1, callback_arguments, &exception);
-        }
-      }
-
-    }
-  }
-
-  if (install_data->callback_function)
-    JSValueUnprotect (install_data->context, install_data->callback_function);
-  if (install_data->this_object)
-    JSValueUnprotect (install_data->context, install_data->this_object);
-  if (install_data->context)
-    JSGlobalContextRelease (install_data->context);
-
-  g_object_unref (install_data->app);
-  g_free (install_data->crx_file_path);
-  g_free (install_data->crx_contents_path);
-  g_free (install_data->manifest_data);
-  g_free (install_data->update_url);
-  g_free (install_data->icon_url);
-  g_free (install_data->id);
-  g_free (install_data->default_locale);
-  g_free (install_data->best_icon_path);
-  if (install_data->icon_pixbuf)
-    g_object_unref (install_data->icon_pixbuf);
-  if (install_data->error) {
-    g_error_free (install_data->error);
-  }
-  g_slice_free (ChromeWebstoreInstallData, install_data);
-}
+/* Chrome Web Store implementation. CRX package format
+ *
+ * Implementation of the CRX package format. Extractor and other
+ * helpers.
+ */
 
 typedef struct {
   char *crx_file_path;
@@ -770,19 +510,19 @@ crx_extract_thread (GSimpleAsyncResult *result,
 }
 
 static void
-crx_extract (const char *crx_file_path,
-             const char *extract_path,
-             gint io_priority,
-             GCancellable *cancellable,
-             GAsyncReadyCallback callback,
-             gpointer userdata)
+ephy_chrome_apps_crx_extract (const char *crx_file_path,
+			      const char *extract_path,
+			      gint io_priority,
+			      GCancellable *cancellable,
+			      GAsyncReadyCallback callback,
+			      gpointer userdata)
 {
   GSimpleAsyncResult *simple;
   CRXExtractData *extract_data;
 
   simple = g_simple_async_result_new (NULL,
                                       callback, userdata,
-                                      crx_extract);
+                                      ephy_chrome_apps_crx_extract);
 
   extract_data = g_new0 (CRXExtractData, 1);
   g_simple_async_result_set_op_res_gpointer (simple, extract_data, (GDestroyNotify) finish_crx_extract_data);
@@ -803,8 +543,8 @@ crx_extract (const char *crx_file_path,
 }
 
 static gboolean
-crx_extract_finish (GAsyncResult *result,
-                    GError **error)
+ephy_chrome_apps_crx_extract_finish (GAsyncResult *result,
+				     GError **error)
 {
   CRXExtractData *extract_data;
   extract_data = g_simple_async_result_get_op_res_gpointer (G_SIMPLE_ASYNC_RESULT (result));
@@ -813,73 +553,8 @@ crx_extract_finish (GAsyncResult *result,
   return *error == NULL;
 }
 
-static gboolean 
-chrome_webstore_install_cb (gint response,
-                            EphyWebApplication *app,
-                            gpointer userdata)
-{
-  gboolean result = TRUE;
-  ChromeWebstoreInstallData *install_data = (ChromeWebstoreInstallData *) userdata;
-
-  if (response == GTK_RESPONSE_OK) {
-    {
-      char *manifest_install_path;
-
-      manifest_install_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
-
-      result = g_file_set_contents (manifest_install_path,
-                                    ephy_embed_utils_strip_bom_mark (install_data->manifest_data),
-                                    -1,
-                                    &(install_data->error));
-
-      g_free (manifest_install_path);
-
-      if (result) {
-        char *crx_path;
-        GFile *tmp_crx_file, *crx_file;
-
-        tmp_crx_file = g_file_new_for_path (install_data->crx_file_path);
-        crx_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX);
-        crx_file = g_file_new_for_path (crx_path);
-        g_free (crx_path);
-
-        result = g_file_copy (tmp_crx_file, crx_file,
-                              G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
-                              NULL, NULL, NULL, 
-                              &(install_data->error));
-        g_object_unref (tmp_crx_file);
-        g_object_unref (crx_file);
-      }
-
-      if (result) {
-        char *crx_contents_path;
-        GFile *tmp_crx_contents_file, *crx_contents_file;
-
-        tmp_crx_contents_file = g_file_new_for_path (install_data->crx_contents_path);
-        crx_contents_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
-        crx_contents_file = g_file_new_for_path (crx_contents_path);
-        g_free (crx_contents_path);
-
-        result = ephy_file_move_dir_recursively (tmp_crx_contents_file, crx_contents_file,
-                                                 &(install_data->error));
-        g_object_unref (crx_contents_file);
-        g_object_unref (tmp_crx_contents_file);
-      }
-
-    }
-
-  } else {
-    g_set_error (&(install_data->error), EPHY_WEB_APPLICATION_ERROR_QUARK,
-                 EPHY_WEB_APPLICATION_CANCELLED, _("User cancelled installation."));
-  }
-
-  finish_chrome_webstore_install_data (install_data);
-
-  return result;
-}
-
 static char *
-crx_extract_msg_id (const char *str)
+ephy_chrome_apps_crx_extract_msg_id (const char *str)
 {
   if (g_str_has_prefix (str, "__MSG_") && g_str_has_suffix (str + 6, "__"))
     return (g_strndup (str + 6, strlen(str) - 8));
@@ -888,7 +563,7 @@ crx_extract_msg_id (const char *str)
 }
 
 static char *
-crx_get_translation (const char *path, const char *key, const char * default_locale)
+ephy_chrome_apps_crx_get_translation (const char *path, const char *key, const char * default_locale)
 {
   char ** lang;
   char *result = NULL;
@@ -997,109 +672,130 @@ build_hosted_apps_url_regex (const char *web_url, GList *urls)
 }
 
 static gboolean
-parse_crx_manifest (const char *manifest_data,
-                    char **name,
-                    char **web_url,
-                    char **url_regex,
-                    char **local_path,
-                    char **options_path,
-                    char **description,
-                    char **update_url,
-                    GList **permissions,
-                    char **best_icon_path,
-                    GError **error)
+ephy_chrome_apps_crx_parse_manifest (const char *manifest_data,
+				     EphyWebApplication *app,
+				     char **update_url,
+				     char **best_icon_path,
+				     GError **error)
 {
   JsonParser *parser;
-  char *_name = NULL;
-  char *_web_url = NULL;
-  char *_url_regex = NULL;
-  char *_local_path = NULL;
-  char *_options_path = NULL;
-  char *_description = NULL;
+  char *web_url = NULL;
+  char *local_path = NULL;
   char *_update_url = NULL;
   char *_best_icon_path = NULL;
-  GList *_permissions = NULL;
   GError *_error = NULL;
 
   parser = json_parser_new ();
 
-  if (json_parser_load_from_data (parser, ephy_embed_utils_strip_bom_mark (manifest_data), -1, error)) {
+  if (json_parser_load_from_data (parser, ephy_embed_utils_strip_bom_mark (manifest_data), -1, &_error)) {
     JsonNode *root_node;
 
     root_node = json_parser_get_root (parser);
-    _name = ephy_json_path_query_string ("$.name", root_node);
-    if (_name == NULL)
-      g_set_error (&_error, EPHY_WEB_APPLICATION_ERROR_QUARK,
-                   EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, _("No name on manifest."));
 
-    if (_error == NULL) {
-      _web_url = ephy_json_path_query_string ("$.app.launch.web_url", root_node);
-      _local_path = ephy_json_path_query_string ("$.app.launch.local_path", root_node);
-      if (_web_url == NULL && _local_path == NULL)
-        g_set_error (&_error, EPHY_WEB_APPLICATION_ERROR_QUARK,
-                     EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, _("No launch url or path on manifest."));
+    {
+      char *name;
+      name = ephy_json_path_query_string ("$.name", root_node);
+      if (name) {
+	ephy_web_application_set_name (app, name);
+	g_free (name);
+      } else {
+	g_set_error (&_error, EPHY_WEB_APPLICATION_ERROR_QUARK,
+		     EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, _("No name on manifest."));
+      }
     }
 
     if (_error == NULL) {
-      GList *url_list;
+      web_url = ephy_json_path_query_string ("$.app.launch.web_url", root_node);
+      local_path = ephy_json_path_query_string ("$.app.launch.local_path", root_node);
+      if (web_url == NULL && local_path == NULL) {
+        g_set_error (&_error, EPHY_WEB_APPLICATION_ERROR_QUARK,
+                     EPHY_WEB_APPLICATION_CHROME_EXTENSIONS_UNSUPPORTED, _("Currently Epiphany only support installing hosted and packaged apps, not extensions"));
+      } else {
+	if (local_path && ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID)) {
+            char *origin;
 
-      _options_path = ephy_json_path_query_string ("$.options_page", root_node);
-      _description = ephy_json_path_query_string ("$.description", root_node);
+            origin = g_strconcat ("chrome-extension://",
+				  ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID),
+                                  "/",
+                                  NULL);
+            ephy_web_application_set_origin (app, origin);
+            g_free (origin);
+            ephy_web_application_set_launch_path (app, local_path);
+	} else {
+	  GList *url_list;
+
+	  ephy_web_application_set_full_uri (app, web_url);
+
+	  url_list = ephy_json_path_query_string_list ("$.app.urls", root_node);
+	  if (url_list && web_url) {
+	    char *url_regex;
+	    url_regex = build_hosted_apps_url_regex (web_url, url_list);
+	    ephy_web_application_set_uri_regex (app, url_regex);
+	    g_free (url_regex);
+	  }
+	  g_list_foreach (url_list, (GFunc) g_free, NULL);
+	  g_list_free (url_list);
+	}
+      }
+    }
+
+    if (_error == NULL) {
+      char *description;
+      char *options_path;
+      GList *permissions;
+
+      description = ephy_json_path_query_string ("$.description", root_node);
+      ephy_web_application_set_description (app, description);
+      g_free (description);
+
+      options_path = ephy_json_path_query_string ("$.options_page", root_node);
+      if (options_path) {
+	if (web_url) {
+	  SoupURI *base_uri, *options_uri;
+	  char *path;
+	
+	  base_uri = soup_uri_new (web_url);
+	  options_uri = soup_uri_new_with_base (base_uri, options_path);
+
+	  path = soup_uri_to_string (options_uri, TRUE);
+
+	  if (soup_uri_get_fragment (options_uri)) {
+	    char *old_path = path;
+	    
+	    path = g_strconcat (path, "#", soup_uri_get_fragment (options_uri), NULL);
+	    g_free (old_path);
+	  }
+
+	  ephy_web_application_set_options_path (app, g_str_has_prefix (path, "/")?path+1:path);
+
+	  g_free (path);
+	  soup_uri_free (options_uri);
+	  soup_uri_free (base_uri);
+	} else {
+	  ephy_web_application_set_options_path (app, options_path);
+	}
+	g_free (options_path);
+      }
+
+      permissions = ephy_json_path_query_string_list ("$.permissions", root_node);
+      ephy_web_application_set_permissions (app, permissions);
+      g_list_foreach (permissions, (GFunc) g_free, NULL);
+      g_list_free (permissions);
+
       _update_url = ephy_json_path_query_string ("$.update_url", root_node);
       _best_icon_path = ephy_json_path_query_best_icon ("$.icons", root_node);
-      url_list = ephy_json_path_query_string_list ("$.app.urls", root_node);
-      if (url_list && _web_url) {
-        _url_regex = build_hosted_apps_url_regex (_web_url, url_list);
-      }
-      _permissions = ephy_json_path_query_string_list ("$.permissions", root_node);
-      g_list_foreach (url_list, (GFunc) g_free, NULL);
-      g_list_free (url_list);
     }
   }
 
   g_object_unref (parser);
 
-  if (name)
-    *name = _name;
-  else
-    g_free (_name);
-
-  if (description)
-    *description = _description;
-  else
-    g_free (_description);
-  
-  if (web_url)
-    *web_url = _web_url;
-  else
-    g_free (_web_url);
-
-  if (url_regex)
-    *url_regex = _url_regex;
-  else
-    g_free (_url_regex);
-
-  if (local_path)
-    *local_path = _local_path;
-  else
-    g_free (_local_path);
-
-  if (options_path)
-    *options_path = _options_path;
-  else
-    g_free (_options_path);
+  g_free (web_url);
+  g_free (local_path);
 
   if (update_url)
     *update_url = _update_url;
   else
     g_free (_update_url);
-
-  if (permissions) {
-    *permissions = _permissions;
-  } else {
-    g_list_foreach (_permissions, (GFunc) g_free, NULL);
-    g_list_free (_permissions);
-  }
 
   if (best_icon_path)
     *best_icon_path = _best_icon_path;
@@ -1114,16 +810,140 @@ parse_crx_manifest (const char *manifest_data,
   return _error == NULL;
 }
 
+/* Chrome Web Store implementation. Install implementation
+ *
+ * Implementation of the process to install applications from web store or file.
+ */
+
+typedef void     (*EphyChromeAppsInstallCrxCallback) (EphyWebApplication *app,
+						      GError *error,
+						      gpointer userdata);
+typedef struct {
+  EphyWebApplication *app;
+  char *manifest_data;
+  char *update_url;
+  char *icon_url;
+  char *best_icon_path;
+  GdkPixbuf *icon_pixbuf;
+  char *crx_file_path;
+  char *crx_contents_path;
+  GError *error;
+  EphyChromeAppsInstallCrxCallback callback;
+  gpointer userdata;
+} EphyChromeAppsInstallCrxData;
+
+static void
+finish_chrome_apps_install_crx_data (EphyChromeAppsInstallCrxData *install_data)
+{
+  if (install_data->callback)
+    install_data->callback (install_data->app, install_data->error, install_data->userdata);
+
+  if (install_data->error && install_data->error->domain == EPHY_WEB_APPLICATION_ERROR_QUARK) {
+    switch (install_data->error->code) {
+    case EPHY_WEB_APPLICATION_CHROME_EXTENSIONS_UNSUPPORTED:
+    case EPHY_WEB_APPLICATION_UNSUPPORTED_PERMISSIONS:
+      {
+	GtkWidget *dialog;
+	dialog = gtk_message_dialog_new (NULL, GTK_DIALOG_MODAL,
+					 GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+					 "%s", install_data->error->message);
+	gtk_dialog_run (GTK_DIALOG (dialog));
+	gtk_widget_destroy (dialog);
+      }
+      break;
+    }
+  }
+
+  if (install_data->app) g_object_unref (install_data->app);
+  g_free (install_data->crx_file_path);
+  g_free (install_data->crx_contents_path);
+  g_free (install_data->manifest_data);
+  g_free (install_data->update_url);
+  g_free (install_data->icon_url);
+  g_free (install_data->best_icon_path);
+  if (install_data->icon_pixbuf)
+    g_object_unref (install_data->icon_pixbuf);
+  if (install_data->error) {
+    g_error_free (install_data->error);
+  }
+  g_slice_free (EphyChromeAppsInstallCrxData, install_data);
+}
+
+static gboolean 
+chrome_apps_install_crx_install_dialog_cb (gint response,
+					   EphyWebApplication *app,
+					   gpointer userdata)
+{
+  gboolean result = TRUE;
+  EphyChromeAppsInstallCrxData *install_data = (EphyChromeAppsInstallCrxData *) userdata;
+
+  if (response == GTK_RESPONSE_OK) {
+    {
+      char *manifest_install_path;
+
+      manifest_install_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
+
+      result = g_file_set_contents (manifest_install_path,
+                                    ephy_embed_utils_strip_bom_mark (install_data->manifest_data),
+                                    -1,
+                                    &(install_data->error));
+
+      g_free (manifest_install_path);
+
+      if (result) {
+        char *crx_path;
+        GFile *tmp_crx_file, *crx_file;
+
+        tmp_crx_file = g_file_new_for_path (install_data->crx_file_path);
+        crx_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX);
+        crx_file = g_file_new_for_path (crx_path);
+        g_free (crx_path);
+
+        result = g_file_copy (tmp_crx_file, crx_file,
+                              G_FILE_COPY_OVERWRITE | G_FILE_COPY_TARGET_DEFAULT_PERMS,
+                              NULL, NULL, NULL, 
+                              &(install_data->error));
+        g_object_unref (tmp_crx_file);
+        g_object_unref (crx_file);
+      }
+
+      if (result) {
+        char *crx_contents_path;
+        GFile *tmp_crx_contents_file, *crx_contents_file;
+
+        tmp_crx_contents_file = g_file_new_for_path (install_data->crx_contents_path);
+        crx_contents_path = ephy_web_application_get_settings_file_name (install_data->app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
+        crx_contents_file = g_file_new_for_path (crx_contents_path);
+        g_free (crx_contents_path);
+
+        result = ephy_file_move_dir_recursively (tmp_crx_contents_file, crx_contents_file,
+                                                 &(install_data->error));
+        g_object_unref (crx_contents_file);
+        g_object_unref (tmp_crx_contents_file);
+      }
+
+    }
+
+  } else {
+    g_set_error (&(install_data->error), EPHY_WEB_APPLICATION_ERROR_QUARK,
+                 EPHY_WEB_APPLICATION_CANCELLED, _("User cancelled installation."));
+  }
+
+  finish_chrome_apps_install_crx_data (install_data);
+
+  return result;
+}
+
 static void
 on_crx_extract (GObject *object,
                 GAsyncResult *result,
                 gpointer userdata)
 {
   GError *error = NULL;
-  ChromeWebstoreInstallData *install_data = (ChromeWebstoreInstallData *) userdata;
+  EphyChromeAppsInstallCrxData *install_data = (EphyChromeAppsInstallCrxData *) userdata;
   gboolean is_ok = TRUE;
 
-  if (crx_extract_finish (result, &error)) {
+  if (ephy_chrome_apps_crx_extract_finish (result, &error)) {
     char *key_id;
 
     if (install_data->manifest_data == NULL) {
@@ -1140,74 +960,10 @@ on_crx_extract (GObject *object,
       g_free (manifest_path);
 
       if (is_ok) {
-        char *name = NULL;
-        char *description = NULL;
-        char *web_url = NULL;
-        char *url_regex = NULL;
-        char *local_path = NULL;
-        char *options_path = NULL;
         char *best_icon_path = NULL;
-        GList *permissions = NULL;
-        is_ok = parse_crx_manifest (install_data->manifest_data, &name, &web_url, &url_regex, &local_path, &options_path, &description, NULL, &permissions, &best_icon_path, &error);
-        if (is_ok) {
-          ephy_web_application_set_name (install_data->app, name);
-          ephy_web_application_set_description (install_data->app, description);
-          if (local_path && 
-              ephy_web_application_get_custom_key (install_data->app,
-                                                   EPHY_WEB_APPLICATION_CHROME_ID)) {
-            char *origin;
 
-            origin = g_strconcat ("chrome-extension://",
-                                  ephy_web_application_get_custom_key (install_data->app,
-                                                                       EPHY_WEB_APPLICATION_CHROME_ID),
-                                  "/",
-                                  NULL);
-            ephy_web_application_set_origin (install_data->app, origin);
-            g_free (origin);
-            ephy_web_application_set_launch_path (install_data->app, local_path);
-          } else {
-            ephy_web_application_set_full_uri (install_data->app, web_url);
-            if (url_regex) {
-              ephy_web_application_set_uri_regex (install_data->app, url_regex);
-            }
-          }
-          if (options_path) {
-            if (web_url) {
-              SoupURI *base_uri, *options_uri;
-              char *path;
-
-              base_uri = soup_uri_new (web_url);
-              options_uri = soup_uri_new_with_base (base_uri, options_path);
-
-              path = soup_uri_to_string (options_uri, TRUE);
-
-              if (soup_uri_get_fragment (options_uri)) {
-                char *old_path = path;
-
-                path = g_strconcat (path, "#", soup_uri_get_fragment (options_uri), NULL);
-                g_free (old_path);
-              }
-
-              ephy_web_application_set_options_path (install_data->app, g_str_has_prefix (path, "/")?path+1:path);
-
-              g_free (path);
-              soup_uri_free (options_uri);
-              soup_uri_free (base_uri);
-            } else {
-              ephy_web_application_set_options_path (install_data->app, options_path);
-            }
-          }
-          ephy_web_application_set_permissions (install_data->app, permissions);
-          install_data->best_icon_path = best_icon_path;
-        }
-        g_list_foreach (permissions, (GFunc) g_free, NULL);
-        g_list_free (permissions);
-        g_free (name);
-        g_free (description);
-        g_free (web_url);
-        g_free (url_regex);
-        g_free (local_path);
-        g_free (options_path);
+        is_ok = ephy_chrome_apps_crx_parse_manifest (install_data->manifest_data, install_data->app, NULL, &best_icon_path, &error);
+	install_data->best_icon_path = best_icon_path;
       }
     }
 
@@ -1223,17 +979,19 @@ on_crx_extract (GObject *object,
 
     if (is_ok) {
 
-      key_id = crx_extract_msg_id (ephy_web_application_get_name (EPHY_WEB_APPLICATION (install_data->app)));
+      key_id = ephy_chrome_apps_crx_extract_msg_id (ephy_web_application_get_name (EPHY_WEB_APPLICATION (install_data->app)));
       if (key_id != NULL) {
-        char *name = crx_get_translation (install_data->crx_contents_path, key_id, install_data->default_locale);
+        char *name = ephy_chrome_apps_crx_get_translation (install_data->crx_contents_path, key_id, 
+							   ephy_web_application_get_custom_key (install_data->app, EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE));
         ephy_web_application_set_name (install_data->app, name);
         g_free (name);
         g_free (key_id);
       }
 
-      key_id = crx_extract_msg_id (ephy_web_application_get_description (EPHY_WEB_APPLICATION (install_data->app)));
+      key_id = ephy_chrome_apps_crx_extract_msg_id (ephy_web_application_get_description (EPHY_WEB_APPLICATION (install_data->app)));
       if (key_id != NULL) {
-        char *description = crx_get_translation (install_data->crx_contents_path, key_id, install_data->default_locale);
+        char *description = ephy_chrome_apps_crx_get_translation (install_data->crx_contents_path, key_id,
+								  ephy_web_application_get_custom_key (install_data->app, EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE));
         ephy_web_application_set_description (install_data->app, description);
         g_free (description);
         g_free (key_id);
@@ -1245,21 +1003,21 @@ on_crx_extract (GObject *object,
         (NULL,
          _("Install Chrome web store application"), _("Install"),
          install_data->app, install_data->icon_url, install_data->icon_pixbuf,
-         chrome_webstore_install_cb, install_data);
+         chrome_apps_install_crx_install_dialog_cb, install_data);
     }
   }
 
   if (!is_ok) {
     if (error)
       g_propagate_error (&(install_data->error), error);
-    finish_chrome_webstore_install_data (install_data);
+    finish_chrome_apps_install_crx_data (install_data);
   }
 }
 
 static void
 crx_download_status_changed_cb (WebKitDownload *download,
                                 GParamSpec *spec,
-                                ChromeWebstoreInstallData *install_data)
+                                EphyChromeAppsInstallCrxData *install_data)
 {
   WebKitDownloadStatus status = webkit_download_get_status (download);
 
@@ -1270,9 +1028,9 @@ crx_download_status_changed_cb (WebKitDownload *download,
       install_data->crx_contents_path = g_build_filename (ephy_file_tmp_dir (), "ephy-download-XXXXXX", NULL);
       g_mkdtemp (install_data->crx_contents_path);
 
-      crx_extract (install_data->crx_file_path, install_data->crx_contents_path,
-                   G_PRIORITY_DEFAULT_IDLE, NULL,
-                   on_crx_extract, install_data);
+      ephy_chrome_apps_crx_extract (install_data->crx_file_path, install_data->crx_contents_path,
+				    G_PRIORITY_DEFAULT_IDLE, NULL,
+				    on_crx_extract, install_data);
 
       break;
     }
@@ -1282,7 +1040,7 @@ crx_download_status_changed_cb (WebKitDownload *download,
       (NULL,
        _("Install Chrome web store application"), _("Install"),
        install_data->app, install_data->icon_url, install_data->icon_pixbuf,
-       chrome_webstore_install_cb, install_data);
+       chrome_apps_install_crx_install_dialog_cb, install_data);
     break;
   default:
     break;
@@ -1291,7 +1049,7 @@ crx_download_status_changed_cb (WebKitDownload *download,
 
 static gboolean
 chrome_retrieve_crx (char *crx_url, 
-                     ChromeWebstoreInstallData *install_data)
+                     EphyChromeAppsInstallCrxData *install_data)
 {
   WebKitNetworkRequest *request;
   WebKitDownload *download;
@@ -1320,29 +1078,29 @@ chrome_retrieve_crx (char *crx_url,
 }
 
 void
-ephy_chrome_apps_install_crx_extension (const char *origin,
+ephy_chrome_apps_install_crx_from_file (const char *origin,
 					const char *crx_path)
 {
-  ChromeWebstoreInstallData *install_data;
+  EphyChromeAppsInstallCrxData *install_data;
 
-  install_data = g_slice_new0 (ChromeWebstoreInstallData);
+  install_data = g_slice_new0 (EphyChromeAppsInstallCrxData);
   install_data->crx_file_path = g_filename_from_uri (crx_path, NULL, NULL);
   install_data->crx_contents_path = g_build_filename (ephy_file_tmp_dir (), "ephy-download-XXXXXX", NULL);
   g_mkdtemp (install_data->crx_contents_path);
   install_data->app = ephy_web_application_new ();
   ephy_web_application_set_install_origin (install_data->app, origin);
-  crx_extract (install_data->crx_file_path,
-               install_data->crx_contents_path,
-               G_PRIORITY_DEFAULT_IDLE,
-               NULL,
-               on_crx_extract, install_data);
+  ephy_chrome_apps_crx_extract (install_data->crx_file_path,
+				install_data->crx_contents_path,
+				G_PRIORITY_DEFAULT_IDLE,
+				NULL,
+				on_crx_extract, install_data);
 }
 
 
 static void
 crx_update_xml_download_status_changed_cb (WebKitDownload *download,
                                            GParamSpec *spec,
-                                           ChromeWebstoreInstallData *install_data)
+                                           EphyChromeAppsInstallCrxData *install_data)
 {
   WebKitDownloadStatus status = webkit_download_get_status (download);
 
@@ -1361,7 +1119,8 @@ crx_update_xml_download_status_changed_cb (WebKitDownload *download,
           xmlXPathRegisterNs (context, (xmlChar *) "ur",
                               (xmlChar *) "http://www.google.com/update2/response");
           
-          xpath = g_strdup_printf ("/ur:gupdate/ur:app[@appid='%s']/ur:updatecheck/@codebase", install_data->id);
+          xpath = g_strdup_printf ("/ur:gupdate/ur:app[@appid='%s']/ur:updatecheck/@codebase",
+				   ephy_web_application_get_custom_key (install_data->app, EPHY_WEB_APPLICATION_CHROME_ID));
           result = xmlXPathEvalExpression ((xmlChar *) xpath, context);
           if (result != NULL && xmlXPathNodeSetGetLength (result->nodesetval) == 1) {
             xmlAttrPtr idNode;
@@ -1388,7 +1147,7 @@ crx_update_xml_download_status_changed_cb (WebKitDownload *download,
       (NULL,
        _("Install Chrome web store application"), _("Install"),
        install_data->app, install_data->icon_url, install_data->icon_pixbuf,
-       chrome_webstore_install_cb, install_data);
+       chrome_apps_install_crx_install_dialog_cb, install_data);
     break;
   default:
     break;
@@ -1397,7 +1156,7 @@ crx_update_xml_download_status_changed_cb (WebKitDownload *download,
 
 static gboolean
 chrome_retrieve_crx_update_xml (EphyWebApplication *app, 
-                                ChromeWebstoreInstallData *install_data)
+                                EphyChromeAppsInstallCrxData *install_data)
 {
   char *full_uri;
   gboolean result = FALSE;
@@ -1407,7 +1166,8 @@ chrome_retrieve_crx_update_xml (EphyWebApplication *app,
     char *extension_value;
 
     xml_uri = soup_uri_new (install_data->update_url);
-    extension_value = g_strdup_printf ("id=%s&uc", install_data->id);
+    extension_value = g_strdup_printf ("id=%s&uc",
+				       ephy_web_application_get_custom_key (install_data->app, EPHY_WEB_APPLICATION_CHROME_ID));
 
     soup_uri_set_query_from_fields (xml_uri, "x", extension_value, NULL);
     g_free (extension_value);
@@ -1472,171 +1232,69 @@ static const char *forbidden_permissions[] = {
   NULL
 };
 
-static JSValueRef
-chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
-                                                     JSObjectRef function,
-                                                     JSObjectRef thisObject,
-                                                     size_t argumentCount,
-                                                     const JSValueRef arguments[],
-                                                     JSValueRef *exception)
+static void
+ephy_chrome_apps_install_from_store (const char *app_id,
+				     const char *manifest,
+				     const char *icon_url,
+				     const char *icon_data,
+				     const char *localized_name,
+				     const char *default_locale,
+				     EphyChromeAppsInstallCrxCallback callback,
+				     gpointer userdata)
 {
-  JSObjectRef details_obj;
-  JSValueRef prop_value;
-  char *id = NULL;
-  char *default_locale = NULL;
-  char *name = NULL;
-  char *description = NULL;
-  char *manifest = NULL;
-  char *icon_url = NULL;
-  char *icon_data = NULL;
-  char *localized_name = NULL;
-  char *web_url = NULL;
-  char *url_regex = NULL;
-  char *local_path = NULL;
-  char *options_path = NULL;
+  EphyWebApplication *app;
   char *update_url = NULL;
-  GList *permissions = NULL;
   char *best_icon_path = NULL;
-  JSObjectRef callback_function = NULL;
-  GList *forbidden_permissions_found = NULL;
+  GdkPixbuf *icon_pixbuf = NULL;
+  GError *error = NULL;
+  char *used_icon_url = NULL;
+  EphyChromeAppsInstallCrxData *install_data;
 
-  if (argumentCount > 2 || 
-      !JSValueIsObject (context, arguments[0])) {
-    ephy_js_set_exception (context, exception, _("Invalid arguments."));
-    return JSValueMakeNull (context);
-  } else if (argumentCount == 2) {
-    callback_function = JSValueToObject (context, arguments[1], exception);
-    if (*exception) return JSValueMakeNull (context);
-  }
+  app = ephy_web_application_new ();
+  if (app_id)
+    ephy_web_application_set_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID, app_id);
 
-  details_obj = JSValueToObject (context, arguments[0], exception);
-  if (*exception) return JSValueMakeNull (context);
+  ephy_chrome_apps_crx_parse_manifest (manifest, app, &update_url, &best_icon_path, &error);
+  if (error == NULL) {
+    GList *permissions;
 
-  prop_value = ephy_js_object_get_property (context, details_obj, "id", exception);
-  if (*exception) goto finish;
-  if (JSValueIsString (context, prop_value)) {
-    JSStringRef id_string;
-    id_string = JSValueToStringCopy (context, prop_value, exception);
-    if (*exception) goto finish;
-    id = ephy_js_string_to_utf8 (id_string);
-  }
-
-  prop_value = ephy_js_object_get_property (context, details_obj, "manifest", exception);
-  if (*exception) goto finish;
-  if (JSValueIsString (context, prop_value)) {
-    JSStringRef manifest_string;
-
-    manifest_string = JSValueToStringCopy (context, prop_value, exception);
-    if (*exception == NULL) {
-      manifest = ephy_js_string_to_utf8 (manifest_string);
-
-      parse_crx_manifest (manifest, &name, &web_url, &url_regex, &local_path, &options_path, &description, &update_url, &permissions, &best_icon_path, NULL);
-
-      if (permissions) {
-        const char **p;
-
-        for (p = forbidden_permissions; *p != NULL; p++) {
-          if (g_list_find_custom (permissions, *p, (GCompareFunc) g_strcmp0))
-            forbidden_permissions_found = g_list_prepend (forbidden_permissions_found, (gpointer) *p);
-        }
-      }
-    }
-  }
-
-  prop_value = ephy_js_object_get_property (context, details_obj, "iconUrl", exception);
-  if (*exception) goto finish;
-  if (JSValueIsString (context, prop_value)) {
-    JSStringRef icon_url_string;
-    icon_url_string = JSValueToStringCopy (context, prop_value, exception);
-    if (*exception) goto finish;
-    icon_url = ephy_js_string_to_utf8 (icon_url_string);
-  }
-
-  prop_value = ephy_js_object_get_property (context, details_obj, "iconData", exception);
-  if (*exception) goto finish;
-  if (JSValueIsString (context, prop_value)) {
-    JSStringRef icon_data_string;
-    icon_data_string = JSValueToStringCopy (context, prop_value, exception);
-    if (*exception) goto finish;
-    icon_data = ephy_js_string_to_utf8 (icon_data_string);
-  }
-
-  prop_value = ephy_js_object_get_property (context, details_obj, "localizedName", exception);
-  if (*exception) goto finish;
-  if (JSValueIsString (context, prop_value)) {
-    JSStringRef localized_name_string;
-    localized_name_string = JSValueToStringCopy (context, prop_value, exception);
-    if (*exception) goto finish;
-    localized_name = ephy_js_string_to_utf8 (localized_name_string);
-  }
-
-  prop_value = ephy_js_object_get_property (context, details_obj, "default_locale", exception);
-  if (*exception) goto finish;
-  if (JSValueIsString (context, prop_value)) {
-    JSStringRef default_locale_string;
-    default_locale_string = JSValueToStringCopy (context, prop_value, exception);
-    if (*exception) goto finish;
-    default_locale = ephy_js_string_to_utf8 (default_locale_string);
-  }
-
-  if (name && manifest && (web_url || (local_path && id)) && (forbidden_permissions_found == NULL)) {
-    EphyWebApplication *app;
-    char *used_icon_url = NULL;
-    GdkPixbuf *icon_pixbuf = NULL;
-    ChromeWebstoreInstallData *install_data;
-
-    app = ephy_web_application_new ();
-
-    ephy_web_application_set_name (app, localized_name?localized_name:name);
-    if (description) ephy_web_application_set_description (app, description);
-    if (local_path && id) {
-      char *origin;
-
-      origin = g_strconcat ("chrome-extension://",
-                            id,
-                            "/",
-                            NULL);
-      ephy_web_application_set_origin (app, origin);
-      g_free (origin);
-      ephy_web_application_set_launch_path (app, local_path);
-    } else {
-      ephy_web_application_set_full_uri (app, web_url);
-      if (url_regex)
-        ephy_web_application_set_uri_regex (app, url_regex);
-    }
-    if (options_path) {
-      if (web_url) {
-        SoupURI *base_uri, *options_uri;
-        char *path;
-
-        base_uri = soup_uri_new (web_url);
-        options_uri = soup_uri_new_with_base (base_uri, options_path);
-
-        path = soup_uri_to_string (options_uri, TRUE);
-
-        if (soup_uri_get_fragment (options_uri)) {
-          char *old_path = path;
-          
-          path = g_strconcat (path, "#", soup_uri_get_fragment (options_uri), NULL);
-          g_free (old_path);
-        }
-
-        ephy_web_application_set_options_path (app, g_str_has_prefix (path, "/")?path+1:path);
-
-        g_free (path);
-        soup_uri_free (options_uri);
-        soup_uri_free (base_uri);
-      } else {
-        ephy_web_application_set_options_path (app, options_path);
-      }
-    }
+    permissions = ephy_web_application_get_permissions (app);
 
     if (permissions) {
-      ephy_web_application_set_permissions (app, permissions);
+      const char **p;
+      GList *forbidden_permissions_found = NULL;
+
+      for (p = forbidden_permissions; *p != NULL; p++) {
+	if (g_list_find_custom (permissions, *p, (GCompareFunc) g_strcmp0))
+	  forbidden_permissions_found = g_list_prepend (forbidden_permissions_found, (gpointer) *p);
+      }
+
+      if (forbidden_permissions_found) {
+	GString *permissions_list;
+	GList *node;
+
+	permissions_list = g_string_new (NULL);
+	for (node = forbidden_permissions_found; node != NULL; node = g_list_next (node)) {
+	  g_string_append (permissions_list, " ");
+	  g_string_append (permissions_list, (char *) node->data);
+	}
+
+	g_set_error (&error, EPHY_WEB_APPLICATION_ERROR_QUARK,
+		     EPHY_WEB_APPLICATION_UNSUPPORTED_PERMISSIONS,
+		     _("This application requires these not supported extensions: %s. Epiphany support only a subset of Chrome extensions API."), permissions_list->str);
+	g_string_free (permissions_list, TRUE);
+	g_list_free (forbidden_permissions_found);
+      }
     }
+  }
 
-    ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
+  if (default_locale) {
+    ephy_web_application_set_custom_key (app, EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE, default_locale);
+  }
 
+  ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
+
+  if (error == NULL) {
     if (icon_data) {
       GdkPixbufLoader *loader;
       guchar *icon_data_decoded;
@@ -1661,119 +1319,417 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
         used_icon_url = g_strdup (icon_url);
       }
     }
+  }
 
-    install_data = g_slice_new0 (ChromeWebstoreInstallData);
-    install_data->id = g_strdup (id);
-    install_data->default_locale = g_strdup (default_locale);
+  install_data = g_slice_new0 (EphyChromeAppsInstallCrxData);
+  install_data->callback = callback;
+  install_data->userdata = userdata;
+
+  if (error == NULL) {
+
     install_data->app = g_object_ref (app);
-    if (id) {
-      ephy_web_application_set_custom_key (app, EPHY_WEB_APPLICATION_CHROME_ID, id);
-    }
-    if (default_locale) {
-      ephy_web_application_set_custom_key (app, EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE, default_locale);
-    }
-    install_data->error = NULL;
-    install_data->manifest_data = g_strdup (manifest);
-    install_data->update_url = update_url?g_strdup(update_url):DEFAULT_CHROME_WEBSTORE_CRX_UPDATE_PATH;
+    install_data->update_url = g_strdup (update_url);
     install_data->icon_url = g_strdup (used_icon_url);
-    install_data->icon_pixbuf = icon_pixbuf?g_object_ref (icon_pixbuf):NULL;
-    install_data->context = JSGlobalContextCreateInGroup (JSContextGetGroup (context), NULL);
-    install_data->on_installed = NULL;
+    if (icon_pixbuf) install_data->icon_pixbuf = g_object_ref (icon_pixbuf);
     install_data->best_icon_path = g_strdup (best_icon_path);
-    {
-      JSStringRef script_ref;
-      JSValueRef on_installed_value;
-
-      script_ref = JSStringCreateWithUTF8CString ("chrome.management.onInstalled");
-      on_installed_value = JSEvaluateScript (context, script_ref, NULL, NULL, 0, NULL);
-      JSStringRelease (script_ref);
-      if (on_installed_value) {
-        JSValueProtect (context, on_installed_value);
-        install_data->on_installed = JSValueToObject (context, on_installed_value, NULL);
-      }
-    }
-
-    install_data->callback_function = callback_function;
-    install_data->this_object = thisObject;
-    if (thisObject)
-      JSValueProtect (context, thisObject);
-    if (callback_function)
-      JSValueProtect (context, callback_function);
-
     if (!chrome_retrieve_crx_update_xml (app, install_data)) {
 
       ephy_web_application_show_install_dialog (NULL,
                                                 _("Install Chrome web store application"), _("Install"),
                                                 app, used_icon_url, icon_pixbuf,
-                                                chrome_webstore_install_cb, install_data);
+                                                chrome_apps_install_crx_install_dialog_cb, install_data);
     }
-    g_object_unref (app);
-    g_free (used_icon_url);
-    if (icon_pixbuf) g_object_unref (icon_pixbuf);
+  } else {
+    install_data->error = g_error_copy (error);
+    finish_chrome_apps_install_crx_data (install_data);
+  }
 
-  } else if (argumentCount == 2) {
-    JSStringRef result_string;
-    JSValueRef parameters[1];
+  if (error) g_error_free (error);
+  g_object_unref (app);
+  g_free (used_icon_url);
+  if (icon_pixbuf) g_object_unref (icon_pixbuf);
+}
 
-    if (manifest && !web_url && !local_path) {
-      GtkWidget *dialog;
+/* chrome.app.isInstalled: common method */
+static JSValueRef
+chrome_app_get_is_installed (JSContextRef context,
+                             JSObjectRef object,
+                             JSStringRef propertyName,
+                             JSValueRef *exception)
+{
+  bool is_installed = FALSE;
 
-      dialog = gtk_message_dialog_new (NULL, GTK_DIALOG_MODAL,
-                                       GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
-                                       _("Currently Epiphany only support installing hosted and packaged apps, not extensions"));
-      gtk_dialog_run (GTK_DIALOG (dialog));
-      gtk_widget_destroy (dialog);
+  is_installed = ephy_chrome_apps_is_self_installed ();
 
-      result_string = JSStringCreateWithUTF8CString ("user_cancelled");
-      
-    } else if (forbidden_permissions_found != NULL) {
-      GtkWidget *dialog;
-      GList *node;
-      GString *permissions_list;
+  return is_installed?JSValueMakeBoolean (context, TRUE):JSValueMakeUndefined (context);
+}
 
-      permissions_list = g_string_new (NULL);
-      for (node = forbidden_permissions_found; node != NULL; node = g_list_next (node)) {
-        g_string_append (permissions_list, " ");
-        g_string_append (permissions_list, (char *) node->data);
-      }
+/* chrome.app.getDetails: crx-less API */
+static JSValueRef
+chrome_app_get_details (JSContextRef context,
+                        JSObjectRef function,
+                        JSObjectRef thisObject,
+                        size_t argumentCount,
+                        const JSValueRef arguments[],
+                        JSValueRef *exception)
+{
+  char *manifest_contents = NULL;
+  JSValueRef result = NULL;
 
-      dialog = gtk_message_dialog_new (NULL, GTK_DIALOG_MODAL,
-                                       GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
-                                       _("This application requires these not supported extensions: %s. Epiphany support only a subset of Chrome extensions API."), permissions_list->str);
-      g_string_free (permissions_list, TRUE);
-      gtk_dialog_run (GTK_DIALOG (dialog));
-      gtk_widget_destroy (dialog);
+  if (argumentCount != 0) {
+    ephy_js_set_exception (context, exception, _("Invalid arguments."));
+    return JSValueMakeNull (context);
+  }
 
-      result_string = JSStringCreateWithUTF8CString ("user_cancelled");
-      
-    } else {
-      result_string = JSStringCreateWithUTF8CString ("manifest_error");
-    }
-    g_list_free (forbidden_permissions_found);
-    parameters[0] = JSValueMakeString (context, result_string);
-    JSStringRelease (result_string);
+  manifest_contents = ephy_chrome_apps_get_self_crx_less_manifest ();
+  if (manifest_contents) {
+    JSStringRef manifest_string;
 
-    if (JSObjectIsFunction (context, callback_function)) {
-      JSObjectCallAsFunction (context, callback_function, NULL, 1, parameters, exception);
+    manifest_string = JSStringCreateWithUTF8CString (manifest_contents);
+    result = JSValueMakeFromJSONString (context, manifest_string);
+    JSStringRelease (manifest_string);
+
+    g_free (manifest_contents);
+  }
+
+  return result?result:JSValueMakeUndefined (context);
+}
+
+/* chrome.app.install: crx-less API */
+static JSValueRef
+chrome_app_install (JSContextRef context,
+                    JSObjectRef function,
+                    JSObjectRef thisObject,
+                    size_t argumentCount,
+                    const JSValueRef arguments[],
+                    JSValueRef *exception)
+{
+  JSValueRef href_value;
+  JSStringRef href_string;
+  char *window_href = NULL;
+  char *href = NULL;
+
+  if (argumentCount != 0) {
+    ephy_js_set_exception (context, exception, _("Invalid arguments."));
+    return JSValueMakeNull (context);
+  }
+
+  href_value = ephy_js_context_eval_as_function
+    (context,
+     "links = document.getElementsByTagName(\"link\");\n"
+     "for (var i = 0; i < links.length; i++) {\n"
+     "  if (links[i].rel == 'chrome-application-definition' && links[i].href != null) {\n"
+     "    return links[i].href;\n"
+     "    break;\n"
+     "  }\n"
+     "}\n"
+     "return null;",
+     exception);
+  if (*exception) return JSValueMakeNull (context);
+
+  if (!JSValueIsString (context, href_value)) {
+    return JSValueMakeUndefined (context);
+  }
+  href_string = JSValueToStringCopy (context, href_value, exception);
+  if (*exception) return JSValueMakeNull (context);
+
+  href = ephy_js_string_to_utf8 (href_string);
+  JSStringRelease (href_string);
+
+  window_href = ephy_js_context_get_location (context, exception);
+  if (*exception == NULL && window_href == NULL) {
+    ephy_js_set_exception (context, exception, _("Couldn't retrieve context location."));
+  }
+
+  if (window_href && href) {
+    GError *error = NULL;
+
+    ephy_chrome_apps_install_crx_less_manifest_from_uri (href, window_href, &error);
+
+    if (error) {
+      ephy_js_set_exception (context, exception, error->message);
+      g_error_free (error);
     }
   }
 
+  g_free (href);
+  g_free (window_href);
+
+  if (*exception) {
+    return JSValueMakeNull (context);
+  } else {
+    return JSValueMakeUndefined (context);
+  }
+}
+
+static const JSStaticValue chrome_app_class_statisvalues[] =
+{
+  { "isInstalled", chrome_app_get_is_installed, NULL, kJSPropertyAttributeReadOnly },
+  { NULL, NULL, NULL, 0 }
+};
+
+static const JSStaticFunction chrome_app_class_staticfuncs[] =
+{
+{ "install", chrome_app_install, kJSPropertyAttributeNone },
+{ "getDetails", chrome_app_get_details, kJSPropertyAttributeNone },
+{ NULL, NULL, 0 }
+};
+
+static const JSClassDefinition chrome_app_class_def =
+{
+0,
+kJSClassAttributeNone,
+"EphyChromeAppClass",
+NULL,
+
+chrome_app_class_statisvalues,
+chrome_app_class_staticfuncs,
+
+NULL,
+NULL,
+
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL
+};
+
+/* chrome.webstorePrivate.install: webstore only */
+static JSValueRef
+chrome_webstore_private_install (JSContextRef context,
+                                 JSObjectRef function,
+                                 JSObjectRef thisObject,
+                                 size_t argumentCount,
+                                 const JSValueRef arguments[],
+                                 JSValueRef *exception)
+{
+  return JSValueMakeNull (context);
+}
+
+/* chrome.webstorePrivate.beginInstallWithManifest: webstore only */
+typedef struct {
+  JSGlobalContextRef context;
+  JSObjectRef this_object;
+  JSObjectRef callback_function;
+  JSObjectRef on_installed;
+} ChromeWebstoreInstallData;
+
+static void
+chrome_webstore_install_cb (EphyWebApplication *app, GError *error,
+			    gpointer userdata)
+{
+  JSValueRef exception = NULL;
+  ChromeWebstoreInstallData *install_data = (ChromeWebstoreInstallData *) userdata;
+
+  if (install_data->callback_function && 
+      JSObjectIsFunction (install_data->context, install_data->callback_function)) {
+    JSStringRef result_string;
+    JSValueRef parameters[1];
+
+    if (error) {
+      if (error->domain == EPHY_WEB_APPLICATION_ERROR_QUARK) {
+        switch (error->code) {
+        case EPHY_WEB_APPLICATION_FORBIDDEN:
+          result_string = JSStringCreateWithUTF8CString ("permission_denied"); break;
+        case EPHY_WEB_APPLICATION_CANCELLED:
+	case EPHY_WEB_APPLICATION_UNSUPPORTED_PERMISSIONS:
+	case EPHY_WEB_APPLICATION_CHROME_EXTENSIONS_UNSUPPORTED:
+          result_string = JSStringCreateWithUTF8CString ("user_cancelled"); break;
+        case EPHY_WEB_APPLICATION_MANIFEST_URL_ERROR:
+        case EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR:
+        case EPHY_WEB_APPLICATION_MANIFEST_INVALID:
+        case EPHY_WEB_APPLICATION_CRX_EXTRACT_FAILED:
+          result_string = JSStringCreateWithUTF8CString ("manifest_error"); break;
+        default:
+          result_string = JSStringCreateWithUTF8CString ("unknown_error");
+        }
+      } else {
+        result_string = JSStringCreateWithUTF8CString ("unknown_error");
+      }
+    } else {
+      result_string = JSStringCreateWithUTF8CString ("");
+    }
+    parameters[0] = JSValueMakeString (install_data->context, result_string);
+    JSStringRelease (result_string);
+
+    if (JSObjectIsFunction (install_data->context, install_data->callback_function)) {
+      JSObjectCallAsFunction (install_data->context, install_data->callback_function, install_data->this_object, 1, parameters, &exception);
+    }
+  }
+  
+  if (!error && app && install_data->on_installed) {
+    JSValueRef app_object;
+
+    app_object = chrome_app_object_from_application (install_data->context, app, NULL, &exception);
+    if (app_object && ! JSValueIsNull (install_data->context, app_object)) {
+      JSValueRef launch_event_value;
+
+      launch_event_value = ephy_js_object_get_property (install_data->context,
+                                                        install_data->on_installed,
+                                                        "dispatch", &exception);
+
+      if (launch_event_value && JSValueIsObject (install_data->context, launch_event_value)) {
+        JSObjectRef launch_event_function;
+
+        launch_event_function = JSValueToObject (install_data->context, launch_event_value, &exception);
+        if (launch_event_function && JSObjectIsFunction (install_data->context, launch_event_function)) {
+          JSValueRef callback_arguments[1];
+
+          callback_arguments[0] = app_object;
+          JSObjectCallAsFunction (install_data->context, launch_event_function, install_data->on_installed, 1, callback_arguments, &exception);
+        }
+      }
+      
+    }
+  }
+  
+  if (install_data->callback_function)
+    JSValueUnprotect (install_data->context, install_data->callback_function);
+  if (install_data->this_object)
+    JSValueUnprotect (install_data->context, install_data->this_object);
+  if (install_data->context)
+    JSGlobalContextRelease (install_data->context);
+
+  g_slice_free (ChromeWebstoreInstallData, install_data);
+}
+
+static JSValueRef
+chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
+                                                     JSObjectRef function,
+                                                     JSObjectRef thisObject,
+                                                     size_t argumentCount,
+                                                     const JSValueRef arguments[],
+                                                     JSValueRef *exception)
+{
+  JSObjectRef details_obj;
+  JSValueRef prop_value;
+  JSObjectRef callback_function = NULL;
+  char *app_id = NULL;
+  char *manifest = NULL;
+  char *icon_url = NULL;
+  char *icon_data = NULL;
+  char *localized_name = NULL;
+  char *default_locale = NULL;
+  ChromeWebstoreInstallData *install_data;
+
+
+  if (argumentCount > 2 || 
+      !JSValueIsObject (context, arguments[0])) {
+    ephy_js_set_exception (context, exception, _("Invalid arguments."));
+    return JSValueMakeNull (context);
+  } else if (argumentCount == 2) {
+    callback_function = JSValueToObject (context, arguments[1], exception);
+    if (*exception) return JSValueMakeNull (context);
+  }
+
+  details_obj = JSValueToObject (context, arguments[0], exception);
+  if (*exception) return JSValueMakeNull (context);
+
+  prop_value = ephy_js_object_get_property (context, details_obj, "id", exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef id_string;
+
+    id_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+
+    app_id = ephy_js_string_to_utf8 (id_string);
+  }
+
+  prop_value = ephy_js_object_get_property (context, details_obj, "manifest", exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef manifest_string;
+
+    manifest_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+
+    manifest = ephy_js_string_to_utf8 (manifest_string);
+  }
+
+  prop_value = ephy_js_object_get_property (context, details_obj, "iconUrl", exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef icon_url_string;
+
+    icon_url_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+
+    icon_url = ephy_js_string_to_utf8 (icon_url_string);
+  }
+
+  prop_value = ephy_js_object_get_property (context, details_obj, "iconData", exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef icon_data_string;
+
+    icon_data_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+
+    icon_data = ephy_js_string_to_utf8 (icon_data_string);
+  }
+
+  prop_value = ephy_js_object_get_property (context, details_obj, "localizedName", exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef localized_name_string;
+
+    localized_name_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+
+    localized_name = ephy_js_string_to_utf8 (localized_name_string);
+  }
+
+  prop_value = ephy_js_object_get_property (context, details_obj, "default_locale", exception);
+  if (*exception) goto finish;
+  if (JSValueIsString (context, prop_value)) {
+    JSStringRef default_locale_string;
+
+    default_locale_string = JSValueToStringCopy (context, prop_value, exception);
+    if (*exception) goto finish;
+
+    default_locale = ephy_js_string_to_utf8 (default_locale_string);
+  }
+
+  install_data = g_slice_new0 (ChromeWebstoreInstallData);
+  install_data->context = JSGlobalContextCreateInGroup (JSContextGetGroup (context), NULL);
+  install_data->on_installed = NULL;
+  {
+    JSStringRef script_ref;
+    JSValueRef on_installed_value;
+
+    script_ref = JSStringCreateWithUTF8CString ("chrome.management.onInstalled");
+    on_installed_value = JSEvaluateScript (context, script_ref, NULL, NULL, 0, NULL);
+    JSStringRelease (script_ref);
+    if (on_installed_value) {
+      JSValueProtect (context, on_installed_value);
+      install_data->on_installed = JSValueToObject (context, on_installed_value, NULL);
+    }
+  }
+
+  install_data->callback_function = callback_function;
+  install_data->this_object = thisObject;
+  if (thisObject)
+    JSValueProtect (context, thisObject);
+  if (callback_function)
+    JSValueProtect (context, callback_function);
+
+  ephy_chrome_apps_install_from_store (app_id, manifest, icon_url, icon_data, localized_name, default_locale, chrome_webstore_install_cb, install_data);
+
+
  finish:
 
-  g_free (id);
-  g_free (name);
-  g_free (description);
+  g_free (app_id);
   g_free (manifest);
   g_free (icon_url);
   g_free (icon_data);
   g_free (localized_name);
-  g_free (web_url);
-  g_free (url_regex);
-  g_free (local_path);
-  g_free (options_path);
-  g_free (best_icon_path);
-  g_list_foreach (permissions, (GFunc) g_free, NULL);
-  g_list_free (permissions);
+
   if (*exception) return JSValueMakeNull (context);
   return JSValueMakeUndefined (context);
 }
@@ -2395,7 +2351,7 @@ chrome_i18n_get_message (JSContextRef context,
     char *contents_path;
 
     contents_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS);
-    translation = crx_get_translation (contents_path, key_id, ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE));
+    translation = ephy_chrome_apps_crx_get_translation (contents_path, key_id, ephy_web_application_get_custom_key (app, EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE));
     g_free (contents_path);
   }
 

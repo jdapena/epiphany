@@ -60,6 +60,8 @@ typedef enum
   EPHY_WEB_APPLICATION_MANIFEST_INVALID, /* mozilla: invalidManifest */
   EPHY_WEB_APPLICATION_NETWORK, /* mozilla: networkError */
   EPHY_WEB_APPLICATION_CRX_EXTRACT_FAILED, /* Chrome webstore CRX: couldn't extract */
+  EPHY_WEB_APPLICATION_CHROME_EXTENSIONS_UNSUPPORTED, /* Chrome webstore CRX: extensions are not supported */
+  EPHY_WEB_APPLICATION_UNSUPPORTED_PERMISSIONS, /* Chrome manifest: permissions are not supported */
 } EphyWebApplicationError;
 
 #define EPHY_WEB_APPLICATION_ERROR_QUARK (g_quark_from_static_string ("ephy-web-application-error"))
