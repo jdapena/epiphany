@@ -34,6 +34,7 @@
 
 #include <glib/gi18n.h>
 #include <json-glib/json-glib.h>
+#include <webkit/webkit.h>
 
 #define EPHY_WEB_APPLICATION_OPEN_WEB_APPS_MANIFEST "ephy-web-app.open-web-apps.manifest"
 #define EPHY_WEB_APPLICATION_OPEN_WEB_APPS_RECEIPT "ephy-web-app.open-web-apps.receipt"
@@ -232,6 +233,134 @@ ephy_open_web_apps_install_manifest (GtkWindow *window,
   }
 
   g_object_unref (parser);
+}
+
+typedef void     (*InstallManifestFromURICallback) (GError *error,
+						    gpointer userdata);
+
+typedef struct {
+  char *install_origin;
+  char *url;
+  char *local_path;
+  char *receipt;
+  InstallManifestFromURICallback callback;
+  gpointer userdata;
+  GError *error;
+} InstallManifestFromURIData;
+
+static void
+finish_install_manifest_from_uri_data (InstallManifestFromURIData *install_data)
+{
+
+  if (install_data->callback)
+    install_data->callback (install_data->error, install_data->userdata);
+
+  g_free (install_data->url);
+  g_free (install_data->local_path);
+  g_free (install_data->receipt);
+  g_free (install_data->install_origin);
+  if (install_data->error)
+    g_error_free (install_data->error);
+  g_slice_free (InstallManifestFromURIData, install_data);
+}
+
+static void
+install_manifest_from_uri_install_manifest_cb (GError *error, gpointer userdata)
+{
+  InstallManifestFromURIData *install_data = (InstallManifestFromURIData *) userdata;
+
+  if (install_data->error == NULL && error != NULL) {
+    install_data->error = g_error_copy (error);
+  }
+
+  finish_install_manifest_from_uri_data (install_data);
+}
+
+static void
+install_manifest_from_uri_download_status_changed_cb (WebKitDownload *download,
+						      GParamSpec *spec,
+						      InstallManifestFromURIData *install_data)
+{
+  WebKitDownloadStatus status = webkit_download_get_status (download);
+
+  switch (status) {
+  case WEBKIT_DOWNLOAD_STATUS_FINISHED:
+    {
+      char *origin;
+      
+      origin = ephy_embed_utils_url_get_origin (install_data->url);
+      ephy_open_web_apps_install_manifest (NULL,
+					   origin,
+					   install_data->local_path,
+					   install_data->receipt,
+					   install_data->install_origin,
+					   install_manifest_from_uri_install_manifest_cb,
+					   install_data);
+      g_free (origin);
+      g_object_unref (download);
+    }
+    break;
+
+  case WEBKIT_DOWNLOAD_STATUS_ERROR:
+    g_set_error (&(install_data->error), EPHY_WEB_APPLICATION_ERROR_QUARK,
+		 EPHY_WEB_APPLICATION_NETWORK, _("Network error retrieving manifest."));
+    finish_install_manifest_from_uri_data (install_data);
+    g_object_unref (download);
+    break;
+  case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
+    g_set_error (&(install_data->error), EPHY_WEB_APPLICATION_ERROR_QUARK,
+		 EPHY_WEB_APPLICATION_CANCELLED, _("Application retrieval cancelled."));
+    finish_install_manifest_from_uri_data (install_data);
+    g_object_unref (download);
+    break;
+  default:
+    break;
+  }
+}
+
+static void
+ephy_open_web_apps_install_manifest_from_uri (const char *url,
+					      const char *receipt,
+					      const char *install_origin,
+					      InstallManifestFromURICallback callback,
+					      gpointer userdata)
+{
+  InstallManifestFromURIData* install_data;
+  WebKitNetworkRequest *request;
+  WebKitDownload *download;
+  char *destination, *destination_uri, *tmp_filename;
+
+  install_data = g_slice_new0 (InstallManifestFromURIData);
+  install_data->url = g_strdup (url);
+  install_data->receipt = g_strdup (receipt);
+  install_data->install_origin = g_strdup (install_origin);
+  install_data->callback = callback;
+  install_data->userdata = userdata;
+
+  request = webkit_network_request_new (url);
+  if (request == NULL) {
+    g_set_error (&(install_data->error), EPHY_WEB_APPLICATION_ERROR_QUARK,
+                 EPHY_WEB_APPLICATION_MANIFEST_URL_ERROR, _("Manifest URL is invalid."));
+
+    finish_install_manifest_from_uri_data (install_data);
+  }
+
+  download = webkit_download_new (request);
+  g_object_unref (request);
+
+  tmp_filename = ephy_file_tmp_filename ("ephy-download-XXXXXX", NULL);
+  destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
+  destination_uri = g_filename_to_uri (destination, NULL, NULL);
+  webkit_download_set_destination_uri (download, destination_uri);
+  install_data->local_path = g_strdup (destination_uri);
+  g_free (destination);
+  g_free (destination_uri);
+  g_free (tmp_filename);
+
+  g_signal_connect (G_OBJECT (download), "notify::status",
+                    G_CALLBACK (install_manifest_from_uri_download_status_changed_cb), install_data);
+  
+  webkit_download_start (download);
 }
 
 static JSValueRef
@@ -505,10 +634,6 @@ mozapps_get_installed_by (JSContextRef context,
 }
 
 typedef struct {
-  char *install_origin;
-  char *url;
-  char *local_path;
-  char *receipt;
   JSGlobalContextRef context;
   JSObjectRef thisObject;
   JSValueRef onSuccessCallback;
@@ -573,10 +698,6 @@ finish_mozapps_install_data (MozAppsInstallData *install_data, JSValueRef *excep
     }
   }
 
-  g_free (install_data->url);
-  g_free (install_data->local_path);
-  g_free (install_data->receipt);
-  g_free (install_data->install_origin);
   if (install_data->error)
     g_error_free (install_data->error);
 
@@ -594,61 +715,18 @@ finish_mozapps_install_data (MozAppsInstallData *install_data, JSValueRef *excep
 }
 
 static void
-mozapps_install_install_manifest_cb (GError *error, gpointer userdata)
+mozapps_install_install_manifest_from_uri_cb (GError *error,
+					      gpointer userdata)
 {
   MozAppsInstallData *install_data = (MozAppsInstallData *) userdata;
   JSValueRef exception = NULL;
 
-  if (install_data->error == NULL && error != NULL) {
+  if (error) {
     install_data->error = g_error_copy (error);
   }
 
   finish_mozapps_install_data (install_data, &exception);
 }
-
-static void
-mozapp_install_download_status_changed_cb (WebKitDownload *download,
-					   GParamSpec *spec,
-					   MozAppsInstallData *install_data)
-{
-  WebKitDownloadStatus status = webkit_download_get_status (download);
-  JSValueRef exception = NULL;
-
-  switch (status) {
-  case WEBKIT_DOWNLOAD_STATUS_FINISHED:
-    {
-      char *origin;
-      
-      origin = ephy_embed_utils_url_get_origin (install_data->url);
-      ephy_open_web_apps_install_manifest (NULL,
-					   origin,
-					   install_data->local_path,
-					   install_data->receipt,
-					   install_data->install_origin,
-					   mozapps_install_install_manifest_cb,
-					   install_data);
-      g_free (origin);
-      g_object_unref (download);
-    }
-    break;
-
-  case WEBKIT_DOWNLOAD_STATUS_ERROR:
-    g_set_error (&(install_data->error), EPHY_WEB_APPLICATION_ERROR_QUARK,
-		 EPHY_WEB_APPLICATION_NETWORK, _("Network error retrieving manifest."));
-    finish_mozapps_install_data (install_data, &exception);
-    g_object_unref (download);
-    break;
-  case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
-    g_set_error (&(install_data->error), EPHY_WEB_APPLICATION_ERROR_QUARK,
-		 EPHY_WEB_APPLICATION_CANCELLED, _("Application retrieval cancelled."));
-    finish_mozapps_install_data (install_data, &exception);
-    g_object_unref (download);
-    break;
-  default:
-    break;
-  }
-}
-
 
 static JSValueRef
 mozapps_install (JSContextRef context,
@@ -660,11 +738,9 @@ mozapps_install (JSContextRef context,
 {
   char *url;
   char *receipt = NULL;
+  char *install_origin = NULL;
   JSStringRef url_str;
-  WebKitNetworkRequest *request;
-  WebKitDownload *download;
   MozAppsInstallData *install_data;
-  char *destination, *destination_uri, *tmp_filename;
 
   if (argumentCount < 1 || argumentCount > 4) {
     ephy_js_set_exception (context, exception, _("Invalid arguments."));
@@ -698,18 +774,11 @@ mozapps_install (JSContextRef context,
   }
 
   install_data = g_slice_new0 (MozAppsInstallData);
-  install_data->url = url;
-  install_data->local_path = NULL;
-  install_data->install_origin = NULL;
-  install_data->receipt = g_strdup (receipt);
   install_data->context = JSObjectGetPrivate (thisObject);
   JSGlobalContextRetain (install_data->context);
   install_data->thisObject = thisObject;
   if (thisObject != NULL)
     JSValueProtect (context, install_data->thisObject);
-  install_data->onSuccessCallback = NULL;
-  install_data->onErrorCallback = NULL;
-  install_data->error = NULL;
 
   if (argumentCount > 2) {
     install_data->onSuccessCallback = arguments[2];
@@ -726,9 +795,7 @@ mozapps_install (JSContextRef context,
 
     location = ephy_js_context_get_location (context, exception);
     if (location && *exception == NULL) {
-      install_data->install_origin = ephy_embed_utils_url_get_origin (location);
-    } else {
-      install_data->install_origin = NULL;
+      install_origin = ephy_embed_utils_url_get_origin (location);
     }
     g_free (location);
   }
@@ -737,30 +804,13 @@ mozapps_install (JSContextRef context,
     return finish_mozapps_install_data (install_data, exception);
   }
 
-  request = webkit_network_request_new (url);
-  if (request == NULL) {
-    /* URL is invalid */
-    g_set_error (&(install_data->error), EPHY_WEB_APPLICATION_ERROR_QUARK,
-                 EPHY_WEB_APPLICATION_MANIFEST_URL_ERROR, _("Manifest URL is invalid."));
+  ephy_open_web_apps_install_manifest_from_uri (url, receipt, install_origin,
+						mozapps_install_install_manifest_from_uri_cb,
+						install_data);
 
-    return finish_mozapps_install_data (install_data, exception);
-  }
-  download = webkit_download_new (request);
-  g_object_unref (request);
-
-  tmp_filename = ephy_file_tmp_filename ("ephy-download-XXXXXX", NULL);
-  destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
-  destination_uri = g_filename_to_uri (destination, NULL, NULL);
-  webkit_download_set_destination_uri (download, destination_uri);
-  install_data->local_path = g_strdup (destination_uri);
-  g_free (destination);
-  g_free (destination_uri);
-  g_free (tmp_filename);
-
-  g_signal_connect (G_OBJECT (download), "notify::status",
-                    G_CALLBACK (mozapp_install_download_status_changed_cb), install_data);
-  
-  webkit_download_start (download);
+  g_free (url);
+  g_free (install_origin);
+  g_free (receipt);
 
   return JSValueMakeUndefined(context);
 }
