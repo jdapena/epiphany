@@ -35,6 +35,28 @@
 #include <glib/gi18n.h>
 #include <json-glib/json-glib.h>
 
+#define EPHY_WEB_APPLICATION_OPEN_WEB_APPS_MANIFEST "ephy-web-app.open-web-apps.manifest"
+#define EPHY_WEB_APPLICATION_OPEN_WEB_APPS_RECEIPT "ephy-web-app.open-web-apps.receipt"
+
+static gboolean
+is_open_web_app (EphyWebApplication *app)
+{
+  char *manifest_path;
+  GFile *file;
+  gboolean result;
+
+  manifest_path = ephy_web_application_get_settings_file_name (app, 
+							       EPHY_WEB_APPLICATION_OPEN_WEB_APPS_MANIFEST);
+  file = g_file_new_for_path (manifest_path);
+  result = g_file_query_exists (file, NULL);
+  g_object_unref (file);
+  g_free (manifest_path);
+
+  return result;
+}
+
+
+
 typedef struct {
   char *manifest_path;
   char *receipt;
@@ -88,7 +110,7 @@ install_manifest_cb (gint response,
     if (result && install_manifest_data->receipt) {
       char *receipt_path;
 
-      receipt_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_MOZILLA_RECEIPT);
+      receipt_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_OPEN_WEB_APPS_RECEIPT);
 
       result = g_file_set_contents (receipt_path, ephy_embed_utils_strip_bom_mark (install_manifest_data->receipt), -1, &err);
 
@@ -222,7 +244,7 @@ mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *a
 
   if (is_ok) {
     char *manifest_path;
-    manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_MOZILLA_MANIFEST);
+    manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_OPEN_WEB_APPS_MANIFEST);
     manifest_file = g_file_new_for_path (manifest_path);
     g_free (manifest_path);
     
@@ -261,7 +283,7 @@ mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *a
     char *receipt_path;
     GFile *receipt_file;
     
-    receipt_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_MOZILLA_RECEIPT);
+    receipt_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_OPEN_WEB_APPS_RECEIPT);
     receipt_file = g_file_new_for_path (receipt_path);
     g_free (receipt_path);
 
@@ -306,7 +328,7 @@ static JSValueRef mozapps_app_object_from_origin (JSContextRef context, const ch
     app = NULL;
     origin_applications = ephy_web_application_get_applications_from_origin (origin);
     for (node = origin_applications; node != NULL; node = g_list_next (node)) {
-      if (ephy_web_application_is_mozilla_webapp (EPHY_WEB_APPLICATION (node->data))) {
+      if (is_open_web_app (EPHY_WEB_APPLICATION (node->data))) {
         app = EPHY_WEB_APPLICATION (node->data);
         g_object_ref (app);
         break;

@@ -647,22 +647,6 @@ ephy_web_application_get_settings_file_name (EphyWebApplication *app,
   return g_build_filename (priv->profile_dir, base, NULL);
 }
 
-gboolean
-ephy_web_application_is_mozilla_webapp (EphyWebApplication *app)
-{
-  char *manifest_path;
-  GFile *file;
-  gboolean result;
-
-  manifest_path = g_build_filename (app->priv->profile_dir, EPHY_WEB_APPLICATION_MOZILLA_MANIFEST, NULL);
-  file = g_file_new_for_path (manifest_path);
-  result = g_file_query_exists (file, NULL);
-  g_object_unref (file);
-  g_free (manifest_path);
-
-  return result;
-}
-
 const char *
 ephy_web_application_get_custom_key (EphyWebApplication *app,
 				     const char *key)

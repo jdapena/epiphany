@@ -161,8 +161,6 @@ const char *        ephy_web_application_get_profile_dir (EphyWebApplication *ap
 char *              ephy_web_application_get_settings_file_name (EphyWebApplication *app,
                                                                  const char *base);
 
-gboolean            ephy_web_application_is_mozilla_webapp (EphyWebApplication *app);
-
 const char *        ephy_web_application_get_custom_key (EphyWebApplication *app,
                                                          const char *key);
 void                ephy_web_application_set_custom_key (EphyWebApplication *app,
