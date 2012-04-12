@@ -115,6 +115,7 @@ UI_FILES = \
 	resources/epiphany-ui.xml		  \
 	resources/epiphany.ui			  \
 	resources/epiphany-application-menu.ui	  \
+	resources/epiphany-webapp-application-menu.ui	\
 	resources/prefs-dialog.ui		  \
 	resources/epiphany.css                    \
 	$(NULL)

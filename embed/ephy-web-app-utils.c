@@ -2009,6 +2009,7 @@ parse_crx_manifest (const char *manifest_data,
                     char **web_url,
                     char **url_regex,
                     char **local_path,
+                    char **options_path,
                     char **description,
                     char **update_url,
                     GList **permissions,
@@ -2020,6 +2021,7 @@ parse_crx_manifest (const char *manifest_data,
   char *_web_url = NULL;
   char *_url_regex = NULL;
   char *_local_path = NULL;
+  char *_options_path = NULL;
   char *_description = NULL;
   char *_update_url = NULL;
   char *_best_icon_path = NULL;
@@ -2044,10 +2046,11 @@ parse_crx_manifest (const char *manifest_data,
         g_set_error (&_error, ERROR_QUARK,
                      EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, _("No launch url or path on manifest."));
     }
-      
+
     if (_error == NULL) {
       GList *url_list;
 
+      _options_path = ephy_json_path_query_string ("$.options_page", root_node);
       _description = ephy_json_path_query_string ("$.description", root_node);
       _update_url = ephy_json_path_query_string ("$.update_url", root_node);
       _best_icon_path = ephy_json_path_query_best_icon ("$.icons", root_node);
@@ -2087,6 +2090,11 @@ parse_crx_manifest (const char *manifest_data,
     *local_path = _local_path;
   else
     g_free (_local_path);
+
+  if (options_path)
+    *options_path = _options_path;
+  else
+    g_free (_options_path);
 
   if (update_url)
     *update_url = _update_url;
@@ -2144,9 +2152,10 @@ on_crx_extract (GObject *object,
         char *web_url = NULL;
         char *url_regex = NULL;
         char *local_path = NULL;
+        char *options_path = NULL;
         char *best_icon_path = NULL;
         GList *permissions = NULL;
-        is_ok = parse_crx_manifest (install_data->manifest_data, &name, &web_url, &url_regex, &local_path, &description, NULL, &permissions, &best_icon_path, &error);
+        is_ok = parse_crx_manifest (install_data->manifest_data, &name, &web_url, &url_regex, &local_path, &options_path, &description, NULL, &permissions, &best_icon_path, &error);
         if (is_ok) {
           ephy_web_application_set_name (install_data->app, name);
           ephy_web_application_set_description (install_data->app, description);
@@ -2169,6 +2178,32 @@ on_crx_extract (GObject *object,
               ephy_web_application_set_uri_regex (install_data->app, url_regex);
             }
           }
+          if (options_path) {
+            if (web_url) {
+              SoupURI *base_uri, *options_uri;
+              char *path;
+
+              base_uri = soup_uri_new (web_url);
+              options_uri = soup_uri_new_with_base (base_uri, options_path);
+
+              path = soup_uri_to_string (options_uri, TRUE);
+
+              if (soup_uri_get_fragment (options_uri)) {
+                char *old_path = path;
+
+                path = g_strconcat (path, "#", soup_uri_get_fragment (options_uri), NULL);
+                g_free (old_path);
+              }
+
+              ephy_web_application_set_options_path (install_data->app, g_str_has_prefix (path, "/")?path+1:path);
+
+              g_free (path);
+              soup_uri_free (options_uri);
+              soup_uri_free (base_uri);
+            } else {
+              ephy_web_application_set_options_path (install_data->app, options_path);
+            }
+          }
           ephy_web_application_set_permissions (install_data->app, permissions);
           install_data->best_icon_path = best_icon_path;
         }
@@ -2179,6 +2214,7 @@ on_crx_extract (GObject *object,
         g_free (web_url);
         g_free (url_regex);
         g_free (local_path);
+        g_free (options_path);
       }
     }
 
@@ -2464,6 +2500,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   char *web_url = NULL;
   char *url_regex = NULL;
   char *local_path = NULL;
+  char *options_path = NULL;
   char *update_url = NULL;
   GList *permissions = NULL;
   char *best_icon_path = NULL;
@@ -2500,7 +2537,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
     if (*exception == NULL) {
       manifest = ephy_js_string_to_utf8 (manifest_string);
 
-      parse_crx_manifest (manifest, &name, &web_url, &url_regex, &local_path, &description, &update_url, &permissions, &best_icon_path, NULL);
+      parse_crx_manifest (manifest, &name, &web_url, &url_regex, &local_path, &options_path, &description, &update_url, &permissions, &best_icon_path, NULL);
 
       if (permissions) {
         const char **p;
@@ -2573,6 +2610,32 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
       ephy_web_application_set_full_uri (app, web_url);
       if (url_regex)
         ephy_web_application_set_uri_regex (app, url_regex);
+    }
+    if (options_path) {
+      if (web_url) {
+        SoupURI *base_uri, *options_uri;
+        char *path;
+
+        base_uri = soup_uri_new (web_url);
+        options_uri = soup_uri_new_with_base (base_uri, options_path);
+
+        path = soup_uri_to_string (options_uri, TRUE);
+
+        if (soup_uri_get_fragment (options_uri)) {
+          char *old_path = path;
+          
+          path = g_strconcat (path, "#", soup_uri_get_fragment (options_uri), NULL);
+          g_free (old_path);
+        }
+
+        ephy_web_application_set_options_path (app, g_str_has_prefix (path, "/")?path+1:path);
+
+        g_free (path);
+        soup_uri_free (options_uri);
+        soup_uri_free (base_uri);
+      } else {
+        ephy_web_application_set_options_path (app, options_path);
+      }
     }
 
     if (permissions) {
@@ -2714,6 +2777,7 @@ chrome_webstore_private_begin_install_with_manifest (JSContextRef context,
   g_free (web_url);
   g_free (url_regex);
   g_free (local_path);
+  g_free (options_path);
   g_free (best_icon_path);
   g_list_foreach (permissions, (GFunc) g_free, NULL);
   g_list_free (permissions);

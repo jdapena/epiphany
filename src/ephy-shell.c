@@ -196,11 +196,35 @@ show_preferences (GSimpleAction *action,
                   GVariant *parameter,
                   gpointer user_data)
 {
-  EphyDialog *dialog;
+  if (ephy_embed_shell_get_mode (EPHY_EMBED_SHELL (ephy_shell)) == EPHY_EMBED_SHELL_MODE_APPLICATION) {
+    EphyWebApplication *app;
 
-  dialog = EPHY_DIALOG (ephy_shell_get_prefs_dialog (ephy_shell));
+    app = ephy_embed_shell_get_application (EPHY_EMBED_SHELL (ephy_shell));
 
-  ephy_dialog_show (dialog);
+    if (ephy_web_application_get_options_path (app)) {
+      char *options_uri;
+      WebKitNetworkRequest *request;
+      EphyEmbed *embed;
+      EphyWebView *web_view;
+
+      options_uri = ephy_web_application_get_options_uri (app);
+      request = webkit_network_request_new (options_uri);
+      g_free  (options_uri);
+
+      embed = ephy_shell_new_tab_full (ephy_shell, NULL, NULL, request,
+                                       EPHY_NEW_TAB_IN_NEW_WINDOW | EPHY_NEW_TAB_OPEN_PAGE,
+                                       0, TRUE, 0);
+
+      web_view = ephy_embed_get_web_view (embed);
+      webkit_web_view_set_view_mode (WEBKIT_WEB_VIEW (web_view), WEBKIT_WEB_VIEW_VIEW_MODE_WINDOWED);
+      g_object_unref (request);
+    }
+  } else {
+    EphyDialog *dialog;
+
+    dialog = EPHY_DIALOG (ephy_shell_get_prefs_dialog (ephy_shell));
+    ephy_dialog_show (dialog);
+  }
 }
 
 static void
@@ -259,27 +283,34 @@ static void
 ephy_shell_startup (GApplication* application)
 {
   EphyEmbedShellMode mode;
+  GtkBuilder *builder;
 
   G_APPLICATION_CLASS (ephy_shell_parent_class)->startup (application);
 
   /* We're not remoting; start our services */
   mode = ephy_embed_shell_get_mode (EPHY_EMBED_SHELL (application));
 
-  if (mode != EPHY_EMBED_SHELL_MODE_APPLICATION) {
-    GtkBuilder *builder;
+  g_action_map_add_action_entries (G_ACTION_MAP (application),
+                                   app_entries, G_N_ELEMENTS (app_entries),
+                                   application);
 
-    g_action_map_add_action_entries (G_ACTION_MAP (application),
-                                     app_entries, G_N_ELEMENTS (app_entries),
-                                     application);
+  builder = gtk_builder_new ();
+  gtk_builder_add_from_resource (builder,
+                                 (mode == EPHY_EMBED_SHELL_MODE_APPLICATION)?
+                                 "/org/gnome/epiphany/epiphany-webapp-application-menu.ui":
+                                 "/org/gnome/epiphany/epiphany-application-menu.ui",
+                                 NULL);
+  if (mode == EPHY_EMBED_SHELL_MODE_APPLICATION) {
+    EphyWebApplication *app;
 
-    builder = gtk_builder_new ();
-    gtk_builder_add_from_resource (builder,
-                                   "/org/gnome/epiphany/epiphany-application-menu.ui",
-                                   NULL);
-    gtk_application_set_app_menu (GTK_APPLICATION (application),
-                                  G_MENU_MODEL (gtk_builder_get_object (builder, "app-menu")));
-    g_object_unref (builder);
+    app = ephy_embed_shell_get_application (EPHY_EMBED_SHELL (application));
+    if (!app || !ephy_web_application_get_options_path (app))
+      g_action_map_remove_action (G_ACTION_MAP (application), "preferences");
   }
+
+  gtk_application_set_app_menu (GTK_APPLICATION (application),
+                                G_MENU_MODEL (gtk_builder_get_object (builder, "app-menu")));
+  g_object_unref (builder);
 }
 
 static void

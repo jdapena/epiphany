@@ -65,6 +65,7 @@ struct _EphyWebApplicationPrivate
   char *uri_regex;
   char *install_origin;
   char *launch_path;
+  char *options_path;
   char *install_date;
   char *profile_dir;
   GList *permissions;
@@ -83,6 +84,7 @@ enum
   PROP_URI_REGEX,
   PROP_INSTALL_ORIGIN,
   PROP_LAUNCH_PATH,
+  PROP_OPTIONS_PATH,
   PROP_INSTALL_DATE,
   PROP_PROFILE_DIR,
   PROP_STATUS
@@ -124,6 +126,9 @@ ephy_web_application_get_property (GObject    *object,
     break;
   case PROP_LAUNCH_PATH:
     g_value_set_string (value, priv->launch_path);
+    break;
+  case PROP_OPTIONS_PATH:
+    g_value_set_string (value, priv->options_path);
     break;
   case PROP_INSTALL_DATE:
     g_value_set_string (value, priv->install_date);
@@ -173,6 +178,9 @@ ephy_web_application_set_property (GObject      *object,
     break;
   case PROP_LAUNCH_PATH:
     ephy_web_application_set_launch_path (app, g_value_get_string (value));
+    break;
+  case PROP_OPTIONS_PATH:
+    ephy_web_application_set_options_path (app, g_value_get_string (value));
     break;
   case PROP_STATUS:
     ephy_web_application_set_status (app, g_value_get_enum (value));
@@ -475,6 +483,36 @@ ephy_web_application_set_launch_path (EphyWebApplication *app,
 }
 
 /**
+ * ephy_web_application_get_options_path:
+ * @app: an #EphyWebApplication
+ *
+ * Obtains the options page path of the application.
+ *
+ * Returns: a string
+ **/
+const char *
+ephy_web_application_get_options_path (EphyWebApplication *app)
+{
+  return app->priv->options_path;
+}
+
+/**
+ * ephy_web_application_set_options_path:
+ * @app: an #EphyWebApplication
+ * @launch_path: a string
+ *
+ * Sets the options page path of @app.
+ **/
+void
+ephy_web_application_set_options_path (EphyWebApplication *app,
+				       const char *options_path)
+{
+  g_free (app->priv->options_path);
+  app->priv->options_path = g_strdup (options_path);
+  g_object_notify (G_OBJECT (app), "options-path");
+}
+
+/**
  * ephy_web_application_get_permissions:
  * @app: an #EphyWebApplication
  *
@@ -678,6 +716,7 @@ ephy_web_application_load (EphyWebApplication *app,
 
       priv->uri_regex = g_key_file_get_string (key, "Application", "URIRegEx", NULL);
       priv->launch_path = g_key_file_get_string (key, "Application", "LaunchPath", NULL);
+      priv->options_path = g_key_file_get_string (key, "Application", "OptionsPath", NULL);
       priv->install_origin = g_key_file_get_string (key, "Application", "InstallOrigin", NULL);
       priv->description = g_key_file_get_string (key, "Application", "Description", NULL);
       priv->author = g_key_file_get_string (key, "Application", "Author", NULL);
@@ -745,6 +784,7 @@ ephy_web_application_load (EphyWebApplication *app,
   if (app->priv->author_url) g_object_notify (G_OBJECT (app), "author-url");
   if (app->priv->install_origin) g_object_notify (G_OBJECT (app), "install-origin");
   if (app->priv->launch_path) g_object_notify (G_OBJECT (app), "launch-path");
+  if (app->priv->options_path) g_object_notify (G_OBJECT (app), "options-path");
 
   ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_INSTALLED);
 
@@ -886,6 +926,7 @@ create_desktop_and_metadata_files (EphyWebApplication *app,
   g_free (uri_string);
 
   if (priv->launch_path) g_key_file_set_value (metadata_file, "Application", "LaunchPath", priv->launch_path);
+  if (priv->options_path) g_key_file_set_value (metadata_file, "Application", "OptionsPath", priv->options_path);
   g_key_file_set_value (metadata_file, "Application", "Origin", priv->origin);
   if (priv->uri_regex) g_key_file_set_value (metadata_file, "Application", "URIRegEx", priv->uri_regex);
   if (priv->install_origin) g_key_file_set_value (metadata_file, "Application", "InstallOrigin", priv->install_origin);
@@ -1109,6 +1150,7 @@ ephy_web_application_finalize (GObject *object)
   g_free (priv->origin);
   g_free (priv->install_origin);
   g_free (priv->launch_path);
+  g_free (priv->options_path);
   g_free (priv->install_date);
   g_free (priv->profile_dir);
   g_hash_table_unref (priv->custom_keys);
@@ -1250,6 +1292,21 @@ ephy_web_application_class_init (EphyWebApplicationClass *klass)
                                                         G_PARAM_STATIC_BLURB));
 
   /**
+   * EphyWebApplication::launch_options:
+   *
+   * Options path of the application.
+   */
+  g_object_class_install_property (object_class, PROP_OPTIONS_PATH,
+                                   g_param_spec_string ("options-path",
+                                                        "App options path",
+                                                        "The path inside origin for the application options URI",
+                                                        NULL,
+                                                        G_PARAM_READWRITE |
+                                                        G_PARAM_STATIC_NAME |
+                                                        G_PARAM_STATIC_NICK |
+                                                        G_PARAM_STATIC_BLURB));
+
+  /**
    * EphyWebApplication::install_date:
    *
    * The date the app was installed, or %NULL of still not installed.
@@ -1311,6 +1368,7 @@ ephy_web_application_init (EphyWebApplication *app)
   app->priv->uri_regex = NULL;
   app->priv->install_origin = NULL;
   app->priv->launch_path = NULL;
+  app->priv->options_path = NULL;
   app->priv->profile_dir = NULL;
   app->priv->install_date = NULL;
   app->priv->status = EPHY_WEB_APPLICATION_EMPTY;
@@ -1334,8 +1392,7 @@ ephy_web_application_new (void)
 char *
 ephy_apps_dot_dir (void)
 {
-  return g_build_filename (g_get_home_dir (),
-                           GNOME_DOT_GNOME,
+  return g_build_filename (g_get_user_config_dir (),
                            "epiphany",
                            NULL);
 }
@@ -1564,4 +1621,14 @@ ephy_web_application_get_full_uri    (EphyWebApplication *app)
   priv = app->priv;
 
   return priv->origin?g_strconcat (priv->origin, priv->launch_path, NULL):g_strdup(priv->launch_path);
+}
+
+char *
+ephy_web_application_get_options_uri (EphyWebApplication *app)
+{
+  EphyWebApplicationPrivate *priv;
+
+  priv = app->priv;
+
+  return priv->origin?g_strconcat (priv->origin, priv->options_path, NULL):g_strdup (priv->options_path);
 }

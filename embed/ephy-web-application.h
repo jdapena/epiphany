@@ -140,10 +140,14 @@ void                ephy_web_application_set_install_origin (EphyWebApplication 
 const char *        ephy_web_application_get_launch_path (EphyWebApplication *app);
 void                ephy_web_application_set_launch_path (EphyWebApplication *app,
                                                           const char *launch_path);
+const char *        ephy_web_application_get_options_path(EphyWebApplication *app);
+void                ephy_web_application_set_options_path(EphyWebApplication *app,
+                                                          const char *launch_path);
 
 void                ephy_web_application_set_full_uri    (EphyWebApplication *app,
                                                           const char *full_uri);
 char *              ephy_web_application_get_full_uri    (EphyWebApplication *app);
+char *              ephy_web_application_get_options_uri (EphyWebApplication *app);
 
 EphyWebApplicationStatus ephy_web_application_get_status (EphyWebApplication *app);
 void                ephy_web_application_set_status (EphyWebApplication *app,
