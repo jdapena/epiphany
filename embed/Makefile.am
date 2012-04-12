@@ -11,6 +11,7 @@ NOINST_H_FILES = \
 	ephy-embed-dialog.h		\
 	ephy-embed-private.h		\
 	ephy-encodings.h		\
+	ephy-js-chrome-apps.h		\
 	ephy-js-open-web-apps.h		\
 	ephy-open-web-apps.h		\
 	ephy-request-about.h		\
@@ -50,6 +51,7 @@ libephyembed_la_SOURCES = \
 	ephy-embed-shell.c		\
 	ephy-embed-utils.c              \
 	ephy-encodings.c		\
+	ephy-js-chrome-apps.c		\
 	ephy-js-open-web-apps.c		\
 	ephy-js-utils.c			\
 	ephy-permission-manager.c	\

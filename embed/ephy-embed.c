@@ -32,6 +32,7 @@
 #include "ephy-embed-prefs.h"
 #include "ephy-embed-shell.h"
 #include "ephy-js-open-web-apps.h"
+#include "ephy-js-chrome-apps.h"
 #include "ephy-prefs.h"
 #include "ephy-settings.h"
 #include "ephy-string.h"
@@ -499,7 +500,7 @@ webapp_available_cb (EphyDownload *download,
   if (g_strcmp0 (mime_type, "application/x-web-app-manifest+json") == 0) {
     ephy_open_web_apps_install_manifest (window, origin, destination_path, NULL, NULL, NULL, NULL);
   } else if (g_strcmp0 (mime_type, "application/x-chrome-extension") == 0) {
-    ephy_web_application_install_crx_extension (origin, destination_path);
+    ephy_chrome_apps_install_crx_extension (origin, destination_path);
   }
   
 }

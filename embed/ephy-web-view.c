@@ -33,6 +33,7 @@
 #include "ephy-embed-utils.h"
 #include "ephy-embed.h"
 #include "ephy-file-helpers.h"
+#include "ephy-js-chrome-apps.h"
 #include "ephy-js-open-web-apps.h"
 #include "ephy-history-service.h"
 #include "ephy-permission-manager.h"
@@ -1848,7 +1849,7 @@ window_object_cleared_cb (WebKitWebView *web_view,
     }
   }
   ephy_open_web_apps_setup_js_api (js_context);
-  ephy_web_application_setup_chrome_api (js_context);
+  ephy_chrome_apps_setup_js_api (js_context);
 }
 
 static gboolean

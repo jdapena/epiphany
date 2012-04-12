@@ -28,7 +28,6 @@
 
 #include <glib.h>
 #include <gtk/gtk.h>
-#include <JavaScriptCore/JavaScript.h>
 
 G_BEGIN_DECLS
 
@@ -49,11 +48,6 @@ void     ephy_web_application_show_install_dialog (GtkWindow *window,
                                                    GdkPixbuf *icon_pixbuf,
                                                    EphyWebApplicationInstallCallback callback,
                                                    gpointer userdata);
-
-void     ephy_web_application_install_crx_extension (const char *origin,
-                                                     const char *crx_path);
-
-void     ephy_web_application_setup_chrome_api  (JSGlobalContextRef context);
 
 G_END_DECLS
 
