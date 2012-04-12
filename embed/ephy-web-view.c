@@ -33,6 +33,7 @@
 #include "ephy-embed-utils.h"
 #include "ephy-embed.h"
 #include "ephy-file-helpers.h"
+#include "ephy-js-open-web-apps.h"
 #include "ephy-history-service.h"
 #include "ephy-permission-manager.h"
 #include "ephy-prefs.h"

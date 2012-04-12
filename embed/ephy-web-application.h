@@ -62,6 +62,8 @@ typedef enum
   EPHY_WEB_APPLICATION_CRX_EXTRACT_FAILED, /* Chrome webstore CRX: couldn't extract */
 } EphyWebApplicationError;
 
+#define EPHY_WEB_APPLICATION_ERROR_QUARK (g_quark_from_static_string ("ephy-web-application-error"))
+
 /* Files */
 #define EPHY_WEB_APPLICATION_METADATA_FILE "ephy-web-app.metadata"
 #define EPHY_WEB_APPLICATION_DESKTOP_FILE "ephy-web-app.desktop"
