@@ -28,6 +28,7 @@
 
 #include <glib.h>
 #include <gtk/gtk.h>
+#include <JavaScriptCore/JavaScript.h>
 
 G_BEGIN_DECLS
 

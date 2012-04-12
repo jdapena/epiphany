@@ -24,8 +24,6 @@
 
 #include "ephy-debug.h"
 #include "ephy-file-helpers.h"
-#include "ephy-js-utils.h"
-#include "ephy-settings.h"
 #include "ephy-web-application.h"
 
 #include <glib/gstdio.h>

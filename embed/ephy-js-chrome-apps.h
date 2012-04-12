@@ -29,9 +29,19 @@
 #ifndef _EPHY_JS_CHROME_APPS_H
 #define _EPHY_JS_CHROME_APPS_H
 
-
 #include <glib.h>
 #include <JavaScriptCore/JavaScript.h>
+
+/* Files */
+#define EPHY_WEB_APPLICATION_CHROME_MANIFEST "ephy-web-app.chrome-manifest.json"
+#define EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST "ephy-web-app.chrome-webstore-manifest.json"
+#define EPHY_WEB_APPLICATION_CHROME_CRX "ephy-web-app.chrome-webstore-extension.crx"
+#define EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS "ephy-web-app.chrome-webstore-crx-contents"
+
+/* Custom keys */
+#define EPHY_WEB_APPLICATION_CHROME_ID "chrome-id"
+#define EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE "chrome-default-locale"
+
 
 G_BEGIN_DECLS
 

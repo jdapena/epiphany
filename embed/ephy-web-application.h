@@ -69,14 +69,6 @@ typedef enum
 #define EPHY_WEB_APPLICATION_DESKTOP_FILE "ephy-web-app.desktop"
 #define EPHY_WEB_APPLICATION_APP_ICON "app-icon.png"
 #define EPHY_WEB_APPLICATION_COOKIE_JAR "cookies.sqlite"
-#define EPHY_WEB_APPLICATION_CHROME_MANIFEST "ephy-web-app.chrome-manifest.json"
-#define EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST "ephy-web-app.chrome-webstore-manifest.json"
-#define EPHY_WEB_APPLICATION_CHROME_CRX "ephy-web-app.chrome-webstore-extension.crx"
-#define EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS "ephy-web-app.chrome-webstore-crx-contents"
-
-/* Custom keys */
-#define EPHY_WEB_APPLICATION_CHROME_ID "chrome-id"
-#define EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE "chrome-default-locale"
 
 
 typedef struct _EphyWebApplication EphyWebApplication;

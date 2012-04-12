@@ -52,10 +52,54 @@ static JSValueRef chrome_app_object_from_application (JSContextRef context,
                                                       EphyWebApplication *app, 
                                                       const char *filter_id, 
                                                       JSValueRef *exception);
+
+/* Common implementation:
+ *
+ * These methods belong to the shared implementation between CRX-less and Webstore
+ * Chrome apps.
+ */
+
 static gboolean
-chrome_install_cb (gint response,
-                   EphyWebApplication *app,
-                   gpointer userdata)
+ephy_chrome_apps_is_self_installed ()
+{
+  EphyWebApplication *app;
+  gboolean is_installed = FALSE;
+
+  app = ephy_web_application_get_self ();
+  if (app) {
+    char *manifest_path;
+    GFile *manifest_file;
+
+    manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_MANIFEST);
+    manifest_file = g_file_new_for_path (manifest_path);
+    g_free (manifest_path);
+    
+    is_installed = g_file_query_exists (manifest_file, NULL);
+    g_object_unref (manifest_file);
+
+    if (!is_installed) {
+      manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
+      manifest_file = g_file_new_for_path (manifest_path);
+      g_free (manifest_path);
+    
+      is_installed = g_file_query_exists (manifest_file, NULL);
+      g_object_unref (manifest_file);
+    }
+    g_object_unref (app);
+  }
+
+  return is_installed;
+}
+
+/* CRX-less implementation
+ * 
+ * This part implements methods specific to only CRX-less handling
+ */
+
+static gboolean
+install_crx_less_manifest_install_dialog_cb (gint response,
+					     EphyWebApplication *app,
+					     gpointer userdata)
 {
   gboolean result = TRUE;
   char *manifest_path = (char *) userdata;
@@ -88,9 +132,9 @@ chrome_install_cb (gint response,
 }
 
 static void
-ephy_web_application_install_chrome_manifest (const char *origin,
-                                              const char *manifest_url,
-                                              const char *manifest_path)
+ephy_chrome_apps_install_crx_less_manifest (const char *origin,
+					    const char *manifest_url,
+					    const char *manifest_path)
 {
   JsonParser *parser;
   GError *error = NULL;
@@ -170,7 +214,8 @@ ephy_web_application_install_chrome_manifest (const char *origin,
     ephy_web_application_show_install_dialog (NULL,
                                               _("Install web application"), _("Install"),
                                               app, icon_href, NULL,
-                                              chrome_install_cb, (gpointer) manifest_file_path);
+                                              install_crx_less_manifest_install_dialog_cb, 
+					      (gpointer) manifest_file_path);
 
     g_object_unref (app);
     g_free (icon_href);
@@ -197,9 +242,9 @@ chrome_app_install_manifest_download_status_changed_cb (WebKitDownload *download
 
   switch (status) {
   case WEBKIT_DOWNLOAD_STATUS_FINISHED:
-    ephy_web_application_install_chrome_manifest (manifest_data->install_origin,
-                                                  manifest_data->manifest_url,
-                                                  manifest_data->local_path);
+    ephy_chrome_apps_install_crx_less_manifest (manifest_data->install_origin,
+						manifest_data->manifest_url,
+						manifest_data->local_path);
   case WEBKIT_DOWNLOAD_STATUS_ERROR:
   case WEBKIT_DOWNLOAD_STATUS_CANCELLED:
     g_free (manifest_data->local_path);
@@ -212,17 +257,77 @@ chrome_app_install_manifest_download_status_changed_cb (WebKitDownload *download
   }
 }
 
-static JSValueRef
-chrome_app_get_is_installed (JSContextRef context,
-                             JSObjectRef object,
-                             JSStringRef propertyName,
-                             JSValueRef *exception)
+static void
+ephy_chrome_apps_install_crx_less_manifest_from_uri (const char *manifest_uri,
+						     const char *window_uri,
+						     GError **error)
+{
+  char *window_origin;
+  char *manifest_origin;
+  GError *_error = NULL;
+
+  window_origin = ephy_embed_utils_url_get_origin (window_uri);
+  manifest_origin = ephy_embed_utils_url_get_origin (manifest_uri);
+
+  if (window_origin && manifest_origin &&
+      g_strcmp0 (window_origin, manifest_origin) == 0) {
+    WebKitNetworkRequest *request;
+
+    request = webkit_network_request_new (manifest_uri);
+    if (request == NULL) {
+      g_set_error (&_error, EPHY_WEB_APPLICATION_ERROR_QUARK,
+		   EPHY_WEB_APPLICATION_FORBIDDEN, _("Invalid request."));
+    } else {
+      WebKitDownload *download;
+      char *tmp_filename;
+      char *destination;
+      char *destination_uri;
+      EphyChromeAppInstallManifestData *install_manifest_data;
+
+      download = webkit_download_new (request);
+      g_object_unref (request);
+
+      tmp_filename = ephy_file_tmp_filename ("ephy-download-XXXXXX", NULL);
+      destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
+      destination_uri = g_filename_to_uri (destination, NULL, NULL);
+      webkit_download_set_destination_uri (download, destination_uri);
+
+      install_manifest_data = g_slice_new0 (EphyChromeAppInstallManifestData);
+      install_manifest_data->manifest_url = g_strdup (manifest_uri);
+      install_manifest_data->install_origin = g_strdup (manifest_origin);
+      install_manifest_data->local_path = g_strdup (destination_uri);
+      g_free (destination);
+      g_free (destination_uri);
+      g_free (tmp_filename);
+
+      g_signal_connect (G_OBJECT (download), "notify::status",
+			G_CALLBACK (chrome_app_install_manifest_download_status_changed_cb), install_manifest_data);
+
+      webkit_download_start (download);
+    }
+  } else {
+      g_set_error (&_error, EPHY_WEB_APPLICATION_ERROR_QUARK,
+		   EPHY_WEB_APPLICATION_FORBIDDEN,
+		   _("Context and manifest origin do not match."));
+  }
+  g_free (window_origin);
+  g_free (manifest_origin);
+
+  if (error) {
+    *error = _error;
+  } else {
+    g_error_free (_error);
+  }
+}
+
+static char *
+ephy_chrome_apps_get_self_crx_less_manifest ()
 {
   EphyWebApplication *app;
-  bool is_installed = FALSE;
+  char *manifest_contents = NULL;
 
-  app = ephy_web_application_new();
-  if (ephy_web_application_load (app, ephy_dot_dir (), NULL)) {
+  app = ephy_web_application_get_self ();
+  if (app) {
     char *manifest_path;
     GFile *manifest_file;
 
@@ -230,22 +335,32 @@ chrome_app_get_is_installed (JSContextRef context,
     manifest_file = g_file_new_for_path (manifest_path);
     g_free (manifest_path);
     
-    is_installed = g_file_query_exists (manifest_file, NULL);
-    g_object_unref (manifest_file);
+    if (g_file_query_exists (manifest_file, NULL))
+      g_file_load_contents (manifest_file, NULL, 
+			    &manifest_contents, NULL, NULL, NULL);
 
-    if (!is_installed) {
-      manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST);
-      manifest_file = g_file_new_for_path (manifest_path);
-      g_free (manifest_path);
-    
-      is_installed = g_file_query_exists (manifest_file, NULL);
-      g_object_unref (manifest_file);
-    }
+    g_object_unref (manifest_file);
+    g_object_unref (app);
   }
+
+  return manifest_contents;
+}
+
+/* chrome.app.isInstalled: common method */
+static JSValueRef
+chrome_app_get_is_installed (JSContextRef context,
+                             JSObjectRef object,
+                             JSStringRef propertyName,
+                             JSValueRef *exception)
+{
+  bool is_installed = FALSE;
+
+  is_installed = ephy_chrome_apps_is_self_installed ();
 
   return is_installed?JSValueMakeBoolean (context, TRUE):JSValueMakeUndefined (context);
 }
 
+/* chrome.app.getDetails: crx-less API */
 static JSValueRef
 chrome_app_get_details (JSContextRef context,
                         JSObjectRef function,
@@ -254,9 +369,6 @@ chrome_app_get_details (JSContextRef context,
                         const JSValueRef arguments[],
                         JSValueRef *exception)
 {
-  EphyWebApplication *app;
-  gboolean is_ok = TRUE;
-  GFile *manifest_file = NULL;
   char *manifest_contents = NULL;
   JSValueRef result = NULL;
 
@@ -265,44 +377,21 @@ chrome_app_get_details (JSContextRef context,
     return JSValueMakeNull (context);
   }
 
-  app = ephy_web_application_new();
-  if (ephy_web_application_load (app, ephy_dot_dir (), NULL)) {
-    char *manifest_path;
-
-    manifest_path = ephy_web_application_get_settings_file_name (app, EPHY_WEB_APPLICATION_CHROME_MANIFEST);
-    manifest_file = g_file_new_for_path (manifest_path);
-    g_free (manifest_path);
-    
-    is_ok = g_file_query_exists (manifest_file, NULL);
-
-    if (is_ok) {
-      is_ok = g_file_load_contents (manifest_file, NULL, 
-                                    &manifest_contents, NULL, NULL, NULL);
-    }
-  } else {
-    is_ok = FALSE;
-  }
-
-  if (is_ok) {
+  manifest_contents = ephy_chrome_apps_get_self_crx_less_manifest ();
+  if (manifest_contents) {
     JSStringRef manifest_string;
 
     manifest_string = JSStringCreateWithUTF8CString (manifest_contents);
     result = JSValueMakeFromJSONString (context, manifest_string);
     JSStringRelease (manifest_string);
+
+    g_free (manifest_contents);
   }
 
-  if (manifest_file) g_object_unref (manifest_file);
-  g_free (manifest_contents);
-
-  if (is_ok) {
-    return result?result:JSValueMakeUndefined (context);
-  } else {
-    return JSValueMakeNull (context);
-  }
-
-  return (result && is_ok)?result:JSValueMakeUndefined (context);
+  return result?result:JSValueMakeUndefined (context);
 }
 
+/* chrome.app.install: crx-less API */
 static JSValueRef
 chrome_app_install (JSContextRef context,
                     JSObjectRef function,
@@ -349,51 +438,14 @@ chrome_app_install (JSContextRef context,
   }
 
   if (window_href && href) {
-    char *window_origin;
-    char *manifest_origin;
+    GError *error = NULL;
 
-    window_origin = ephy_embed_utils_url_get_origin (window_href);
-    manifest_origin = ephy_embed_utils_url_get_origin (href);
+    ephy_chrome_apps_install_crx_less_manifest_from_uri (href, window_href, &error);
 
-    if (window_origin && manifest_origin && g_strcmp0 (window_origin, manifest_origin) == 0) {
-      WebKitNetworkRequest *request;
-
-      request = webkit_network_request_new (href);
-      if (request == NULL) {
-        ephy_js_set_exception (context, exception, _("Invalid request."));
-      } else {
-        WebKitDownload *download;
-        char *tmp_filename;
-        char *destination;
-        char *destination_uri;
-        EphyChromeAppInstallManifestData *install_manifest_data;
-
-        download = webkit_download_new (request);
-        g_object_unref (request);
-
-        tmp_filename = ephy_file_tmp_filename ("ephy-download-XXXXXX", NULL);
-        destination = g_build_filename (ephy_file_tmp_dir (), tmp_filename, NULL);
-        destination_uri = g_filename_to_uri (destination, NULL, NULL);
-        webkit_download_set_destination_uri (download, destination_uri);
-
-        install_manifest_data = g_slice_new0 (EphyChromeAppInstallManifestData);
-        install_manifest_data->manifest_url = g_strdup (href);
-        install_manifest_data->install_origin = g_strdup (manifest_origin);
-        install_manifest_data->local_path = g_strdup (destination_uri);
-        g_free (destination);
-        g_free (destination_uri);
-        g_free (tmp_filename);
-
-        g_signal_connect (G_OBJECT (download), "notify::status",
-                          G_CALLBACK (chrome_app_install_manifest_download_status_changed_cb), install_manifest_data);
-
-        webkit_download_start (download);
-      }
-    } else {
-      ephy_js_set_exception (context, exception, _("Context and manifest origin do not match."));
+    if (error) {
+      ephy_js_set_exception (context, exception, error->message);
+      g_error_free (error);
     }
-    g_free (window_origin);
-    g_free (manifest_origin);
   }
 
   g_free (href);
