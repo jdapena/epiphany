@@ -349,7 +349,14 @@ ephy_web_application_set_origin (EphyWebApplication *app,
                                  const char *origin)
 {
   g_free (app->priv->origin);
-  app->priv->origin = g_strdup (origin);
+  if (!g_str_has_suffix (origin, "/")) {
+    char *fixed_origin;
+
+    fixed_origin = g_strconcat (origin, "/", NULL);
+    app->priv->origin = fixed_origin;
+  } else {
+    app->priv->origin = g_strdup (origin);
+  }
   g_object_notify (G_OBJECT (app), "origin");
 }
 
@@ -478,7 +485,7 @@ ephy_web_application_set_launch_path (EphyWebApplication *app,
                                       const char *launch_path)
 {
   g_free (app->priv->launch_path);
-  app->priv->launch_path = g_strdup (launch_path);
+  app->priv->launch_path = g_strdup (g_str_has_prefix (launch_path, "/")?(launch_path+1):launch_path);
   g_object_notify (G_OBJECT (app), "launch-path");
 }
 
