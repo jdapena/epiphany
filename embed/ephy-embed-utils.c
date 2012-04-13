@@ -174,17 +174,35 @@ ephy_embed_utils_url_is_empty (const char *location)
 char *
 ephy_embed_utils_url_get_origin (const char *url)
 {
-  char *origin;
-  SoupURI *uri, *host_uri;
+	char *origin;
+	SoupURI *uri, *host_uri;
 
-  uri = soup_uri_new (url);
+	uri = soup_uri_new (url);
 
-  host_uri = soup_uri_copy_host (uri);
-  origin = soup_uri_to_string (host_uri, FALSE);
-  soup_uri_free (host_uri);
-  soup_uri_free (uri);
+	host_uri = soup_uri_copy_host (uri);
+	origin = soup_uri_to_string (host_uri, FALSE);
+	soup_uri_free (host_uri);
+	soup_uri_free (uri);
 
-  return origin;
+	return origin;
+}
+
+gboolean
+ephy_embed_utils_urls_match_origin (const char *url1,
+				    const char *url2)
+{
+	gboolean result = FALSE;
+
+	SoupURI *uri1 = soup_uri_new (url1);
+	SoupURI *uri2 = soup_uri_new (url2);
+
+	if (uri1 && uri2) {
+		result = soup_uri_host_equal (uri1, uri2);
+	}
+	if (uri1) soup_uri_free (uri1);
+	if (uri2) soup_uri_free (uri2);
+	
+	return result;
 }
 
 /* Some strings in UTF-8 can be preceeded with Byte-Order Mark. We

@@ -159,6 +159,8 @@ ephy_open_web_apps_install_manifest (GtkWindow *window,
     EphyWebApplication *app;
     char *icon_href = NULL;
     char *query_result;
+    GList *allowed_install_origins, *node;
+    gboolean allowed = FALSE;
 
     app = ephy_web_application_new ();
     ephy_web_application_set_install_origin (app, install_origin);
@@ -203,20 +205,40 @@ ephy_open_web_apps_install_manifest (GtkWindow *window,
       g_free (query_result);
     }
 
-    install_manifest_data = g_slice_new0 (InstallManifestData);
-    install_manifest_data->origin = g_strdup (origin);
-    install_manifest_data->manifest_path = g_strdup (manifest_file_path);
-    install_manifest_data->receipt = g_strdup (receipt);
-    install_manifest_data->error = NULL;
-    install_manifest_data->callback = callback;
-    install_manifest_data->userdata = userdata;
+    allowed_install_origins = ephy_json_path_query_string_list ("$.installs_allowed_from", root_node);
+    allowed_install_origins = g_list_append (allowed_install_origins, g_strdup (origin));
+    for (node = allowed_install_origins; !allowed && node != NULL; node = g_list_next (node)) {
+      char *str = (char *) node->data;
+      allowed = (g_strcmp0 (str, "*") == 0 ||
+		 ephy_embed_utils_urls_match_origin (str, install_origin));
+    }
+    g_list_foreach (allowed_install_origins, (GFunc) g_free, NULL);
+    g_list_free (allowed_install_origins);
 
-    ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
+    if (!allowed) {
+      if (callback) {
+	g_set_error (&error, EPHY_WEB_APPLICATION_ERROR_QUARK, EPHY_WEB_APPLICATION_FORBIDDEN, _("Application cannot be installed from here."));
+	callback (origin, error, userdata);
+	g_error_free (error);
+      }
+      return;
+    } else {
 
-    ephy_web_application_show_install_dialog (window,
-                                              _("Install web application"), _("Install"),
-                                              app, icon_href, NULL,
-                                              install_manifest_cb, (gpointer) install_manifest_data);
+      install_manifest_data = g_slice_new0 (InstallManifestData);
+      install_manifest_data->origin = g_strdup (origin);
+      install_manifest_data->manifest_path = g_strdup (manifest_file_path);
+      install_manifest_data->receipt = g_strdup (receipt);
+      install_manifest_data->error = NULL;
+      install_manifest_data->callback = callback;
+      install_manifest_data->userdata = userdata;
+
+      ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
+
+      ephy_web_application_show_install_dialog (window,
+						_("Install web application"), _("Install"),
+						app, icon_href, NULL,
+						install_manifest_cb, (gpointer) install_manifest_data);
+    }
 
     g_object_unref (app);
     g_free (icon_href);
