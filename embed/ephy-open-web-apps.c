@@ -56,6 +56,7 @@ is_open_web_app (EphyWebApplication *app)
 
 
 typedef struct {
+  char *origin;
   char *manifest_path;
   char *receipt;
   GError *error;
@@ -67,8 +68,9 @@ static void
 finish_install_manifest_data (InstallManifestData *install_data)
 {
   if (install_data->callback) {
-    install_data->callback (install_data->error, install_data->userdata);
+    install_data->callback (install_data->origin, install_data->error, install_data->userdata);
   }
+  g_free (install_data->origin);
   g_free (install_data->manifest_path);
   g_free (install_data->receipt);
   if  (install_data->error) {
@@ -143,7 +145,7 @@ ephy_open_web_apps_install_manifest (GtkWindow *window,
   if (!manifest_file_path) {
     if (callback) {
       g_set_error (&error, EPHY_WEB_APPLICATION_ERROR_QUARK, EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR, _("Couldn't open manifest."));
-      callback (error, userdata);
+      callback (origin, error, userdata);
       g_error_free (error);
     }
     return;
@@ -202,6 +204,7 @@ ephy_open_web_apps_install_manifest (GtkWindow *window,
     }
 
     install_manifest_data = g_slice_new0 (InstallManifestData);
+    install_manifest_data->origin = g_strdup (origin);
     install_manifest_data->manifest_path = g_strdup (manifest_file_path);
     install_manifest_data->receipt = g_strdup (receipt);
     install_manifest_data->error = NULL;
@@ -224,7 +227,7 @@ ephy_open_web_apps_install_manifest (GtkWindow *window,
     error->domain = EPHY_WEB_APPLICATION_ERROR_QUARK;
     error->code = EPHY_WEB_APPLICATION_MANIFEST_PARSE_ERROR;
     if (callback) {
-      callback (error, userdata);
+      callback (origin, error, userdata);
       g_error_free (error);
     }
   }
@@ -235,6 +238,7 @@ ephy_open_web_apps_install_manifest (GtkWindow *window,
 typedef struct {
   char *install_origin;
   char *url;
+  char *origin;
   char *local_path;
   char *receipt;
   EphyOpenWebAppsInstallManifestFromURICallback callback;
@@ -247,8 +251,9 @@ finish_install_manifest_from_uri_data (InstallManifestFromURIData *install_data)
 {
 
   if (install_data->callback)
-    install_data->callback (install_data->error, install_data->userdata);
+    install_data->callback (install_data->origin, install_data->error, install_data->userdata);
 
+  g_free (install_data->origin);
   g_free (install_data->url);
   g_free (install_data->local_path);
   g_free (install_data->receipt);
@@ -259,7 +264,7 @@ finish_install_manifest_from_uri_data (InstallManifestFromURIData *install_data)
 }
 
 static void
-install_manifest_from_uri_install_manifest_cb (GError *error, gpointer userdata)
+install_manifest_from_uri_install_manifest_cb (const char *origin, GError *error, gpointer userdata)
 {
   InstallManifestFromURIData *install_data = (InstallManifestFromURIData *) userdata;
 
@@ -280,17 +285,14 @@ install_manifest_from_uri_download_status_changed_cb (WebKitDownload *download,
   switch (status) {
   case WEBKIT_DOWNLOAD_STATUS_FINISHED:
     {
-      char *origin;
-      
-      origin = ephy_embed_utils_url_get_origin (install_data->url);
+      install_data->origin = ephy_embed_utils_url_get_origin (install_data->url);
       ephy_open_web_apps_install_manifest (NULL,
-					   origin,
+					   install_data->origin,
 					   install_data->local_path,
 					   install_data->receipt,
 					   install_data->install_origin,
 					   install_manifest_from_uri_install_manifest_cb,
 					   install_data);
-      g_free (origin);
       g_object_unref (download);
     }
     break;
@@ -325,6 +327,7 @@ ephy_open_web_apps_install_manifest_from_uri (const char *url,
   char *destination, *destination_uri, *tmp_filename;
 
   install_data = g_slice_new0 (InstallManifestFromURIData);
+  install_data->origin = NULL;
   install_data->url = g_strdup (url);
   install_data->receipt = g_strdup (receipt);
   install_data->install_origin = g_strdup (install_origin);

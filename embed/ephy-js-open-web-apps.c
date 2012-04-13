@@ -58,6 +58,7 @@ mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *a
   if (is_ok) {
     GFileInfo *metadata_info;
     guint64 created;
+    char *origin;
 
     result = JSObjectMake (context, NULL, NULL);
     
@@ -69,9 +70,16 @@ mozapps_app_object_from_application (JSContextRef context, EphyWebApplication *a
     ephy_js_object_set_property_from_json (context, result,
                                            "manifest", manifest_contents,
                                            exception);
+    origin = g_strdup (ephy_web_application_get_origin (app));
+    if  (g_str_has_suffix (origin, "/")) {
+      /* The origin in mozApps does not contain the trailing bar */
+      char *bar_position = g_strrstr (origin, "/");
+      *bar_position = '\0';
+    }
     ephy_js_object_set_property_from_string (context, result,
-                                             "origin", ephy_web_application_get_origin(app),
+                                             "origin", origin,
                                              exception);
+    g_free (origin);
     ephy_js_object_set_property_from_uint64 (context, result,
                                              "install_time", created,
                                              exception);
@@ -267,8 +275,10 @@ mozapps_get_installed_by (JSContextRef context,
 typedef struct {
   JSGlobalContextRef context;
   JSObjectRef thisObject;
+  JSObjectRef pendingObject;
   JSValueRef onSuccessCallback;
   JSValueRef onErrorCallback;
+  char *origin;
   GError *error;
 } MozAppsInstallData;
 
@@ -279,11 +289,45 @@ finish_mozapps_install_data (MozAppsInstallData *install_data, JSValueRef *excep
   JSValueRef result;
   context = install_data->context;
 
-  if (*exception == NULL && install_data->error == NULL && install_data->onSuccessCallback) {
-    JSObjectCallAsFunction (context,
-                            JSValueToObject (context, install_data->onSuccessCallback, NULL),
-                            install_data->thisObject, 0, NULL, exception);
-  } else if (*exception == NULL && install_data->error != NULL && install_data->onErrorCallback) {
+  if (*exception == NULL && install_data->error == NULL) {
+    if (*exception == NULL) {
+      EphyWebApplication *app;
+
+      app = ephy_open_web_apps_get_application_from_origin (install_data->origin);
+      if (app) {
+	JSValueRef appObject;
+
+	appObject = mozapps_app_object_from_application (context, app, exception);
+	ephy_js_object_set_property_from_value (context,
+						install_data->pendingObject,
+						"result",
+						appObject,
+						exception);
+	g_object_unref (app);
+      }
+    }
+
+    if (*exception == NULL && install_data->onSuccessCallback)
+      JSObjectCallAsFunction (context,
+			      JSValueToObject (context, install_data->onSuccessCallback, NULL),
+			      install_data->thisObject, 0, NULL, exception);
+
+    if (*exception == NULL) {
+      JSValueRef onSuccess;
+
+      onSuccess = ephy_js_object_get_property (context,
+					       install_data->pendingObject,
+					       "onsuccess",
+					       exception);
+      if (*exception == NULL && JSValueIsObject (context, onSuccess)) {
+	JSObjectRef onSuccessObj = JSValueToObject (context, onSuccess, exception);
+	if (*exception == NULL && JSObjectIsFunction (context, onSuccessObj))
+	  JSObjectCallAsFunction (context, onSuccessObj, install_data->pendingObject, 
+				  0, NULL, exception);
+      }
+    }
+
+  } else if (*exception == NULL && install_data->error != NULL) {
     JSValueRef errorValue[1];
     const char *code = NULL;
 
@@ -323,14 +367,39 @@ finish_mozapps_install_data (MozAppsInstallData *install_data, JSValueRef *excep
     }
 
     if (*exception == NULL) {
+      ephy_js_object_set_property_from_value (context,
+					      install_data->pendingObject,
+					      "error",
+					      errorValue[0],
+					      exception);
+    }
+
+    if (*exception == NULL && install_data->onErrorCallback) {
       JSObjectCallAsFunction (context,
                               JSValueToObject (context, install_data->onErrorCallback, NULL),
                               install_data->thisObject, 1, errorValue, exception);
+    }
+
+    if (*exception == NULL) {
+      JSValueRef onError;
+
+      onError = ephy_js_object_get_property (context,
+					     install_data->pendingObject,
+					     "onerror",
+					     exception);
+      if (*exception == NULL && JSValueIsObject (context, onError)) {
+	JSObjectRef onErrorObj = JSValueToObject (context, onError, exception);
+	if (*exception == NULL && JSObjectIsFunction (context, onErrorObj))
+	  JSObjectCallAsFunction (context, onErrorObj, install_data->pendingObject,
+				  0, NULL, exception);
+      }
     }
   }
 
   if (install_data->error)
     g_error_free (install_data->error);
+
+  g_free (install_data->origin);
 
   if (install_data->thisObject)
     JSValueUnprotect (context, install_data->thisObject);
@@ -338,6 +407,8 @@ finish_mozapps_install_data (MozAppsInstallData *install_data, JSValueRef *excep
     JSValueUnprotect (context, install_data->onSuccessCallback);
   if (install_data->onErrorCallback)
     JSValueUnprotect (context, install_data->onErrorCallback);
+  if (install_data->pendingObject)
+    JSValueUnprotect (context, install_data->pendingObject);
   g_slice_free (MozAppsInstallData, install_data);
 
   result = (*exception != NULL)?JSValueMakeNull(context):JSValueMakeUndefined(context);
@@ -346,7 +417,8 @@ finish_mozapps_install_data (MozAppsInstallData *install_data, JSValueRef *excep
 }
 
 static void
-mozapps_install_install_manifest_from_uri_cb (GError *error,
+mozapps_install_install_manifest_from_uri_cb (const char *origin,
+					      GError *error,
 					      gpointer userdata)
 {
   MozAppsInstallData *install_data = (MozAppsInstallData *) userdata;
@@ -404,10 +476,27 @@ mozapps_install (JSContextRef context,
     return JSValueMakeNull (context);
   }
 
+  {
+    char *location;
+
+    location = ephy_js_context_get_location (context, exception);
+    if (location && *exception == NULL) {
+      install_origin = ephy_embed_utils_url_get_origin (location);
+    }
+    g_free (location);
+  }
+
+  if (*exception != NULL) {
+    g_free (install_origin);
+    return JSValueMakeNull (context);
+  }
+
   install_data = g_slice_new0 (MozAppsInstallData);
   install_data->context = JSObjectGetPrivate (thisObject);
   JSGlobalContextRetain (install_data->context);
   install_data->thisObject = thisObject;
+  install_data->pendingObject = JSObjectMake (context, NULL, NULL);
+  JSValueProtect (context, install_data->pendingObject);
   if (thisObject != NULL)
     JSValueProtect (context, install_data->thisObject);
 
@@ -421,20 +510,6 @@ mozapps_install (JSContextRef context,
     JSValueProtect (context, install_data->onErrorCallback);
   }
 
-  {
-    char *location;
-
-    location = ephy_js_context_get_location (context, exception);
-    if (location && *exception == NULL) {
-      install_origin = ephy_embed_utils_url_get_origin (location);
-    }
-    g_free (location);
-  }
-
-  if (*exception != NULL) {
-    return finish_mozapps_install_data (install_data, exception);
-  }
-
   ephy_open_web_apps_install_manifest_from_uri (url, receipt, install_origin,
 						mozapps_install_install_manifest_from_uri_cb,
 						install_data);
@@ -443,7 +518,218 @@ mozapps_install (JSContextRef context,
   g_free (install_origin);
   g_free (receipt);
 
-  return JSValueMakeUndefined(context);
+  return install_data->pendingObject;
+}
+
+typedef struct {
+  JSGlobalContextRef context;
+  JSObjectRef pendingObject;
+} MozAppsGenericData;
+
+static gboolean
+finish_mozapps_generic_data (gpointer userdata)
+{
+  MozAppsGenericData *data = (MozAppsGenericData *) userdata;
+  JSGlobalContextRef context = data->context;
+  JSObjectRef pendingObject = data->pendingObject;
+  JSValueRef error;
+  JSValueRef exception = NULL;
+
+  error = ephy_js_object_get_property (context,
+				       pendingObject,
+				       "error",
+				       &exception);
+
+  if (exception == NULL) {
+    if (JSValueIsObject (context, error)) {
+      JSValueRef onError;
+
+      onError = ephy_js_object_get_property (context,
+					     pendingObject,
+					     "onerror",
+					     &exception);
+      if (exception == NULL && JSValueIsObject (context, onError)) {
+	JSObjectRef onErrorObj = JSValueToObject (context, onError, &exception);
+	if (exception == NULL && JSObjectIsFunction (context, onErrorObj))
+	  JSObjectCallAsFunction (context, onErrorObj, pendingObject,
+				  0, NULL, &exception);
+      }
+    } else {
+      JSValueRef onSuccess;
+
+      onSuccess = ephy_js_object_get_property (context,
+					       pendingObject,
+					       "onsuccess",
+					       &exception);
+      if (exception == NULL && JSValueIsObject (context, onSuccess)) {
+	JSObjectRef onSuccessObj = JSValueToObject (context, onSuccess, &exception);
+	if (exception == NULL && JSObjectIsFunction (context, onSuccessObj))
+	  JSObjectCallAsFunction (context, onSuccessObj, pendingObject,
+				  0, NULL, &exception);
+      }
+    }
+  }
+
+  if (data->pendingObject)
+    JSValueUnprotect (context, pendingObject);
+  if (data->context)
+    JSGlobalContextRelease (context);
+  g_slice_free (MozAppsGenericData, data);
+
+  return FALSE;
+}
+
+static JSValueRef
+mozapps_get_self (JSContextRef context,
+		  JSObjectRef function,
+		  JSObjectRef thisObject,
+		  size_t argumentCount,
+		  const JSValueRef arguments[],
+		  JSValueRef *exception)
+{
+  MozAppsGenericData *data;
+  char *location = NULL;
+  char *origin = NULL;
+
+  if (argumentCount != 0) {
+    ephy_js_set_exception (context, exception, _("Invalid arguments."));
+    return JSValueMakeNull (context);
+  }
+
+  data = g_slice_new0 (MozAppsGenericData);
+  data->context = JSGlobalContextCreateInGroup (JSContextGetGroup (context), NULL);
+  data->pendingObject = JSObjectMake (context, NULL, NULL);
+  JSValueProtect (context, data->pendingObject);
+
+  location = ephy_js_context_get_location (context, exception);
+  if (location == NULL || *exception != NULL) {
+    g_free (location);
+    ephy_js_set_exception (context, exception, _("Couldn't fetch context location."));
+    goto getSelfFinish;
+  }
+
+  origin = ephy_embed_utils_url_get_origin (location);
+
+  if (origin == NULL) {
+    ephy_js_set_exception (context, exception, _("Couldn't get context origin."));
+    goto getSelfFinish;
+  } else {
+    EphyWebApplication *app;
+
+    app = ephy_open_web_apps_get_application_from_origin (origin);
+    if (app != NULL) {
+      JSValueRef appObject = mozapps_app_object_from_application (context, app, exception);
+      ephy_js_object_set_property_from_value (context,
+					      data->pendingObject,
+					      "result",
+					      appObject,
+					      exception);
+      g_object_unref (app);
+    }
+  }
+
+  if (*exception) {
+    JSValueRef error = JSObjectMakeError (context, 0, 0, exception);
+    JSObjectRef errorObj = JSValueToObject (context, error, NULL);
+    ephy_js_object_set_property_from_string (context, errorObj,
+					     "code", "getSelfFailed",
+					     exception);
+    ephy_js_object_set_property_from_string (context, errorObj,
+					     "message", "Error in mozApps.getSelf",
+					     exception);
+  }
+  
+ getSelfFinish:
+  g_free (origin);
+  g_free (location);
+
+  g_idle_add ((GSourceFunc) finish_mozapps_generic_data, data);
+
+  return data->pendingObject;
+}
+
+static JSValueRef
+mozapps_get_installed (JSContextRef context,
+		       JSObjectRef function,
+		       JSObjectRef thisObject,
+		       size_t argumentCount,
+		       const JSValueRef arguments[],
+		       JSValueRef *exception)
+{
+  MozAppsGenericData *data;
+  char *location = NULL;
+  char *origin = NULL;
+
+  if (argumentCount != 0) {
+    ephy_js_set_exception (context, exception, _("Invalid arguments."));
+    return JSValueMakeNull (context);
+  }
+
+  data = g_slice_new0 (MozAppsGenericData);
+  data->context = JSGlobalContextCreateInGroup (JSContextGetGroup (context), NULL);
+  data->pendingObject = JSObjectMake (context, NULL, NULL);
+  JSValueProtect (context, data->pendingObject);
+
+  location = ephy_js_context_get_location (context, exception);
+  if (location == NULL || *exception != NULL) {
+    g_free (location);
+    ephy_js_set_exception (context, exception, _("Couldn't fetch context location."));
+    goto finish;
+  }
+
+  origin = ephy_embed_utils_url_get_origin (location);
+
+  if (origin == NULL) {
+    ephy_js_set_exception (context, exception, _("Couldn't get context origin."));
+    goto finish;
+  } else {
+    GList *apps;
+    int array_count = 0;
+    JSValueRef *array_arguments = NULL;
+    JSValueRef result;
+
+    apps = ephy_open_web_apps_get_applications_from_install_origin (origin);
+    array_count = g_list_length (apps);
+    if (apps != NULL) {
+      GList *node;
+      int i;
+
+      array_arguments = g_malloc0 (sizeof (JSValueRef *) * array_count);
+      for (i = 0, node = apps; node != NULL; i++, node = g_list_next (node)) {
+	array_arguments[i] = mozapps_app_object_from_application (context,
+								  (EphyWebApplication *) node->data,
+								  exception);
+      }
+      ephy_web_application_free_applications_list (apps);
+    }
+    result = JSObjectMakeArray (context, array_count, array_arguments, exception);
+    g_free (array_arguments);
+
+    ephy_js_object_set_property_from_value (context,
+					    data->pendingObject,
+					    "result",
+					    result,
+					    exception);
+  }
+
+  if (*exception) {
+    JSValueRef error = JSObjectMakeError (context, 0, 0, exception);
+    JSObjectRef errorObj = JSValueToObject (context, error, NULL);
+    ephy_js_object_set_property_from_string (context, errorObj,
+					     "code", "getInstalledFailed",
+					     exception);
+    ephy_js_object_set_property_from_string (context, errorObj,
+					     "message", "Error in mozApps.getInstalled",
+					     exception);
+  }
+  
+ finish:
+  g_free (origin);
+  g_free (location);
+
+  g_idle_add ((GSourceFunc) finish_mozapps_generic_data, data);
+
+  return data->pendingObject;
 }
 
 static const JSStaticFunction mozapps_class_staticfuncs[] =
@@ -451,6 +737,8 @@ static const JSStaticFunction mozapps_class_staticfuncs[] =
 { "amInstalled", mozapps_am_installed, kJSPropertyAttributeNone },
 { "install", mozapps_install, kJSPropertyAttributeNone },
 { "getInstalledBy", mozapps_get_installed_by, kJSPropertyAttributeNone },
+{ "getSelf", mozapps_get_self, kJSPropertyAttributeNone },
+{ "getInstalled", mozapps_get_installed, kJSPropertyAttributeNone },
 { NULL, NULL, 0 }
 };
 

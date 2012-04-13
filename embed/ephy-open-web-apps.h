@@ -39,9 +39,11 @@
 
 G_BEGIN_DECLS
 
-typedef void     (*EphyOpenWebAppsInstallManifestCallback) (GError *error,
+typedef void     (*EphyOpenWebAppsInstallManifestCallback) (const char *origin,
+							    GError *error,
 							    gpointer userdata);
-typedef void     (*EphyOpenWebAppsInstallManifestFromURICallback) (GError *error,
+typedef void     (*EphyOpenWebAppsInstallManifestFromURICallback) (const char *origin,
+								   GError *error,
 								   gpointer userdata);
 
 

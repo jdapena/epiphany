@@ -35,9 +35,6 @@
 
 G_BEGIN_DECLS
 
-typedef void     (*EphyOpenWebAppsInstallManifestCallback) (GError *error,
-							    gpointer userdata);
-
 void     ephy_open_web_apps_setup_js_api       (JSGlobalContextRef context);
 						    
 G_END_DECLS
