@@ -38,13 +38,6 @@ G_BEGIN_DECLS
 typedef void     (*EphyOpenWebAppsInstallManifestCallback) (GError *error,
 							    gpointer userdata);
 
-void     ephy_open_web_apps_install_manifest   (GtkWindow *window,
-						const char *origin,
-						const char *manifest_path,
-						const char *receipt,
-                                                const char *install_origin,
-                                                EphyOpenWebAppsInstallManifestCallback callback,
-                                                gpointer userdata);
 void     ephy_open_web_apps_setup_js_api       (JSGlobalContextRef context);
 						    
 G_END_DECLS

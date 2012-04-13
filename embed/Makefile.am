@@ -8,6 +8,7 @@ header_DATA = \
 	$(INST_H_FILES)
 
 NOINST_H_FILES = \
+	ephy-chrome-apps.h		\
 	ephy-embed-dialog.h		\
 	ephy-embed-private.h		\
 	ephy-encodings.h		\
@@ -43,6 +44,7 @@ libephyembed_la_SOURCES = \
 	ephy-adblock.c			\
 	ephy-adblock-manager.c		\
 	ephy-download.c			\
+	ephy-chrome-apps.c		\
 	ephy-embed.c			\
 	ephy-embed-container.c          \
 	ephy-embed-dialog.c		\

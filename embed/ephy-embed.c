@@ -31,7 +31,7 @@
 #include "ephy-download.h"
 #include "ephy-embed-prefs.h"
 #include "ephy-embed-shell.h"
-#include "ephy-js-open-web-apps.h"
+#include "ephy-open-web-apps.h"
 #include "ephy-js-chrome-apps.h"
 #include "ephy-prefs.h"
 #include "ephy-settings.h"
