@@ -32,21 +32,10 @@
 #include <glib.h>
 #include <JavaScriptCore/JavaScript.h>
 
-/* Files */
-#define EPHY_WEB_APPLICATION_CHROME_MANIFEST "ephy-web-app.chrome-manifest.json"
-#define EPHY_WEB_APPLICATION_CHROME_WEBSTORE_MANIFEST "ephy-web-app.chrome-webstore-manifest.json"
-#define EPHY_WEB_APPLICATION_CHROME_CRX "ephy-web-app.chrome-webstore-extension.crx"
-#define EPHY_WEB_APPLICATION_CHROME_CRX_CONTENTS "ephy-web-app.chrome-webstore-crx-contents"
-
-/* Custom keys */
-#define EPHY_WEB_APPLICATION_CHROME_ID "chrome-id"
-#define EPHY_WEB_APPLICATION_CHROME_DEFAULT_LOCALE "chrome-default-locale"
 
 
 G_BEGIN_DECLS
 
-void     ephy_chrome_apps_install_crx_from_file (const char *origin,
-						 const char *crx_path);
 
 void     ephy_chrome_apps_setup_js_api  (JSGlobalContextRef context);
 

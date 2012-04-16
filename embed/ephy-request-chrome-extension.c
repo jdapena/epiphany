@@ -26,7 +26,7 @@
 #include "ephy-embed-shell.h"
 #include "ephy-file-helpers.h"
 #include "ephy-smaps.h"
-#include "ephy-js-chrome-apps.h"
+#include "ephy-chrome-apps.h"
 #include "ephy-web-application.h"
 
 #include <gio/gio.h>
