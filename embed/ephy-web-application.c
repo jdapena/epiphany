@@ -91,6 +91,15 @@ enum
 };
 
 static void
+_set_nonempty_status (EphyWebApplication *app)
+{
+  EphyWebApplicationPrivate *priv = app->priv;
+
+  if (priv->status == EPHY_WEB_APPLICATION_EMPTY)
+    ephy_web_application_set_status (app, EPHY_WEB_APPLICATION_TEMPORARY);
+}
+
+static void
 ephy_web_application_get_property (GObject    *object,
                                    guint       property_id,
                                    GValue     *value,
@@ -221,6 +230,7 @@ ephy_web_application_set_name (EphyWebApplication *app,
   g_free (app->priv->name);
   app->priv->name = g_strdup (name);
   g_object_notify (G_OBJECT (app), "name");
+  _set_nonempty_status (app);
 }
 
 /**
@@ -253,6 +263,7 @@ ephy_web_application_set_description (EphyWebApplication *app,
   g_free (app->priv->description);
   app->priv->description = g_strdup (description);
   g_object_notify (G_OBJECT (app), "description");
+  _set_nonempty_status (app);
 }
 
 /**
@@ -285,6 +296,7 @@ ephy_web_application_set_author (EphyWebApplication *app,
   g_free (app->priv->author);
   app->priv->author = g_strdup (author);
   g_object_notify (G_OBJECT (app), "author");
+  _set_nonempty_status (app);
 }
 
 /**
@@ -317,6 +329,7 @@ ephy_web_application_set_author_url (EphyWebApplication *app,
   g_free (app->priv->author_url);
   app->priv->author_url = g_strdup (author_url);
   g_object_notify (G_OBJECT (app), "author-url");
+  _set_nonempty_status (app);
 }
 
 /**
@@ -358,6 +371,7 @@ ephy_web_application_set_origin (EphyWebApplication *app,
     app->priv->origin = g_strdup (origin);
   }
   g_object_notify (G_OBJECT (app), "origin");
+  _set_nonempty_status (app);
 }
 
 /**
@@ -391,6 +405,7 @@ ephy_web_application_set_uri_regex (EphyWebApplication *app,
   g_free (app->priv->uri_regex);
   app->priv->uri_regex = g_strdup (uri_regex);
   g_object_notify (G_OBJECT (app), "uri-regex");
+  _set_nonempty_status (app);
 }
 
 /**
@@ -455,6 +470,7 @@ ephy_web_application_set_install_origin (EphyWebApplication *app,
   g_free (app->priv->install_origin);
   app->priv->install_origin = g_strdup (install_origin);
   g_object_notify (G_OBJECT (app), "install-origin");
+  _set_nonempty_status (app);
 }
 
 /**
@@ -487,6 +503,7 @@ ephy_web_application_set_launch_path (EphyWebApplication *app,
   g_free (app->priv->launch_path);
   app->priv->launch_path = g_strdup (g_str_has_prefix (launch_path, "/")?(launch_path+1):launch_path);
   g_object_notify (G_OBJECT (app), "launch-path");
+  _set_nonempty_status (app);
 }
 
 /**
@@ -517,6 +534,7 @@ ephy_web_application_set_options_path (EphyWebApplication *app,
   g_free (app->priv->options_path);
   app->priv->options_path = g_strdup (options_path);
   g_object_notify (G_OBJECT (app), "options-path");
+  _set_nonempty_status (app);
 }
 
 /**
@@ -562,6 +580,7 @@ ephy_web_application_set_permissions (EphyWebApplication *app,
   g_list_foreach (old_permissions, (GFunc) g_free, NULL);
   g_list_free (old_permissions);
 
+  _set_nonempty_status (app);
 }
 
 static char *
@@ -667,6 +686,7 @@ ephy_web_application_set_custom_key (EphyWebApplication *app,
 				     const char *value)
 {
   g_hash_table_insert (app->priv->custom_keys, (gpointer) g_strdup (key), (gpointer) g_strdup (value));
+  _set_nonempty_status (app);
 }
 
 gboolean
@@ -679,8 +699,8 @@ ephy_web_application_load (EphyWebApplication *app,
   char *contents = NULL;
   gboolean is_ok = TRUE;
 
-  if (priv->status != EPHY_WEB_APPLICATION_EMPTY) {
-    g_set_error (error, ERROR_QUARK, 0, _("Tried to load a non empty application."));
+  if (priv->status != EPHY_WEB_APPLICATION_TEMPORARY) {
+    g_set_error (error, ERROR_QUARK, 0, _("Tried to load a application."));
     is_ok = FALSE;
   }
 
@@ -1623,6 +1643,7 @@ ephy_web_application_set_full_uri (EphyWebApplication *app,
 
   g_object_notify (G_OBJECT (app), "origin");
   g_object_notify (G_OBJECT (app), "launch-path");
+  _set_nonempty_status (app);
 }
 
 char *
