@@ -1527,14 +1527,14 @@ ephy_web_application_get_profile_dir_from_name (const char *name)
 }
 
 /**
- * ephy_web_application_self:
+ * ephy_web_application_get_self:
  *
  * Obtains the currently running web application
  *
  * Returns: (transfer full): an #EphyWebApplication
  */
 EphyWebApplication *
-ephy_web_application_get_self ()
+ephy_web_application_get_self (void)
 {
   EphyWebApplication *result;
 
