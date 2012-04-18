@@ -43,6 +43,14 @@ G_BEGIN_DECLS
 #define EPHY_IS_WEB_APPLICATION_CLASS(klass)   (G_TYPE_CHECK_CLASS_TYPE ((klass), EPHY_TYPE_WEB_APPLICATION))
 #define EPHY_WEB_APPLICATION_GET_CLASS(obj)    (G_TYPE_INSTANCE_GET_CLASS ((obj), EPHY_TYPE_WEB_APPLICATION, EphyWebApplicationClass))
 
+/**
+ * EphyWebApplicationStatus:
+ * @EPHY_WEB_APPLICATION_EMPTY: application object is empty.
+ * @EPHY_WEB_APPLICATION_TEMPORARY: application is transient, and can be installed.
+ * @EPHY_WEB_APPLICATION_INSTALLED: application is installed, and can be launched or deleted.
+ *
+ * Status of the application.
+ */
 typedef enum
 {
   EPHY_WEB_APPLICATION_EMPTY,
