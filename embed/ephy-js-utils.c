@@ -166,6 +166,23 @@ ephy_js_object_set_property_from_uint64 (JSContextRef context,
 }
 
 void
+ephy_js_object_set_property_from_double (JSContextRef context,
+                                         JSObjectRef obj,
+                                         const char *name,
+                                         gdouble value,
+                                         JSValueRef *exception)
+{
+  JSStringRef name_string;
+
+  name_string = JSStringCreateWithUTF8CString (name);
+  JSObjectSetProperty (context, obj, 
+                       name_string, JSValueMakeNumber (context, value),
+                       kJSPropertyAttributeReadOnly | kJSPropertyAttributeDontDelete,
+                       exception);
+  JSStringRelease (name_string);
+}
+
+void
 ephy_js_object_set_property_from_boolean (JSContextRef context,
                                           JSObjectRef obj,
                                           const char *name,

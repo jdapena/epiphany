@@ -1849,7 +1849,7 @@ window_object_cleared_cb (WebKitWebView *web_view,
     }
   }
   ephy_open_web_apps_setup_js_api (js_context);
-  ephy_chrome_apps_setup_js_api (js_context);
+  ephy_chrome_apps_setup_js_api (js_context, frame);
 }
 
 static gboolean

@@ -1073,13 +1073,270 @@ NULL,
 NULL
 };
 
-void
-ephy_chrome_apps_setup_js_api (JSGlobalContextRef context)
+typedef struct _ChromePrivateData {
+  WebKitWebFrame *frame;
+  WebKitWebNavigationReason navigation_reason;
+  gdouble load_provisional_time;
+  gdouble load_commited_time;
+  gdouble load_finished_time;
+  gdouble load_first_visually_non_empty_layout_time;
+  gdouble request_time;
+  gulong load_status_id;
+  gulong request_starting_id;
+  gulong navigation_requested_id;
+} ChromePrivateData;
+
+static JSValueRef
+chrome_csi (JSContextRef ctx,
+	    JSObjectRef function,
+	    JSObjectRef thisObject,
+	    size_t argumentCount,
+	    const JSValueRef arguments[],
+	    JSValueRef *exception)
 {
+  ChromePrivateData *priv = (ChromePrivateData *) JSObjectGetPrivate (thisObject);
+  JSObjectRef result = NULL;
+  GTimeVal real_time;
+  gdouble time;
+  gint tran;
+
+  g_get_current_time (&real_time);
+  time = real_time.tv_sec*G_USEC_PER_SEC + real_time.tv_usec;
+
+  result = JSObjectMake (ctx, NULL, NULL);
+
+  ephy_js_object_set_property_from_double (ctx, result, "startE",
+					   priv->request_time, exception);
+  ephy_js_object_set_property_from_double (ctx, result, "onLoadT",
+					   priv->load_finished_time, exception);
+  ephy_js_object_set_property_from_double (ctx, result, "pageT",
+					   time - priv->request_time, exception);
+  switch (priv->navigation_reason) {
+  case WEBKIT_WEB_NAVIGATION_REASON_LINK_CLICKED:
+  case WEBKIT_WEB_NAVIGATION_REASON_FORM_SUBMITTED:
+  case WEBKIT_WEB_NAVIGATION_REASON_FORM_RESUBMITTED:
+    tran = 0; /* link */
+    break;
+  case WEBKIT_WEB_NAVIGATION_REASON_BACK_FORWARD:
+    tran = 6; /* back forward */
+    break;
+  case WEBKIT_WEB_NAVIGATION_REASON_RELOAD:
+    tran = 16; /* reload */
+    break;
+  case WEBKIT_WEB_NAVIGATION_REASON_OTHER:
+  default:
+    tran = 15; /* other */
+  }
+
+  ephy_js_object_set_property_from_uint64 (ctx, result, "tran",
+					   tran, exception);
+
+  return result;
+}
+
+static JSValueRef
+chrome_load_times (JSContextRef ctx,
+		   JSObjectRef function,
+		   JSObjectRef thisObject,
+		   size_t argumentCount,
+		   const JSValueRef arguments[],
+		   JSValueRef *exception)
+{
+  ChromePrivateData *priv = (ChromePrivateData *) JSObjectGetPrivate (thisObject);
+  JSObjectRef result = NULL;
+  GTimeVal real_time;
+  gdouble time;
+  const char *navigation;
+
+  g_get_current_time (&real_time);
+  time = real_time.tv_sec*G_USEC_PER_SEC + real_time.tv_usec;
+
+  result = JSObjectMake (ctx, NULL, NULL);
+
+  ephy_js_object_set_property_from_double (ctx, result, "requestTime",
+					   priv->request_time, exception);
+  ephy_js_object_set_property_from_double (ctx, result, "startLoadTime",
+					   priv->load_provisional_time, exception);
+  ephy_js_object_set_property_from_double (ctx, result, "commitLoadTime",
+					   priv->load_commited_time, exception);
+  ephy_js_object_set_property_from_double (ctx, result, "finishDocumentLoadTime",
+					   priv->load_finished_time, exception);
+  ephy_js_object_set_property_from_double (ctx, result, "finishLoadTime",
+					   priv->load_finished_time, exception);
+  ephy_js_object_set_property_from_double (ctx, result, "firstPaintTime",
+					   priv->load_first_visually_non_empty_layout_time, exception);
+  ephy_js_object_set_property_from_double (ctx, result, "firstPaintAfterLoadTime",
+					   priv->load_first_visually_non_empty_layout_time, exception);
+  switch (priv->navigation_reason) {
+  case WEBKIT_WEB_NAVIGATION_REASON_LINK_CLICKED:
+    navigation = "LinkClicked";
+    break;
+  case WEBKIT_WEB_NAVIGATION_REASON_FORM_SUBMITTED:
+    navigation = "FormSubmitted";
+    break;
+  case WEBKIT_WEB_NAVIGATION_REASON_FORM_RESUBMITTED:
+    navigation = "FormResubmitted";
+    break;
+  case WEBKIT_WEB_NAVIGATION_REASON_BACK_FORWARD:
+    navigation = "BackForward";
+    break;
+  case WEBKIT_WEB_NAVIGATION_REASON_RELOAD:
+    navigation = "Reload";
+    break;
+  case WEBKIT_WEB_NAVIGATION_REASON_OTHER:
+    navigation = "Other";
+  default:
+    navigation = "";
+  }
+  ephy_js_object_set_property_from_string (ctx, result, "navigationType",
+					   navigation, exception);
+
+  ephy_js_object_set_property_from_boolean (ctx, result, "wasFetchedViaSpdy",
+					    FALSE, exception);
+  ephy_js_object_set_property_from_boolean (ctx, result, "wasNpnNegociated",
+					    FALSE, exception);
+  ephy_js_object_set_property_from_boolean (ctx, result, "wasAlternateProtocolAvailable",
+					    FALSE, exception);
+
+  return result;
+}
+
+static void
+on_chrome_frame_notify_load_status_cb (GObject    *gobject,
+				       GParamSpec *pspec,
+				       gpointer    user_data)
+{
+  ChromePrivateData *priv = (ChromePrivateData *) user_data;
+  WebKitLoadStatus status;
+  GTimeVal real_time;
+  gdouble time;
+
+  g_get_current_time (&real_time);
+  time = real_time.tv_sec*G_USEC_PER_SEC + real_time.tv_usec;
+
+  status = webkit_web_frame_get_load_status (priv->frame);
+
+  switch (status) {
+  case WEBKIT_LOAD_PROVISIONAL:
+    priv->load_provisional_time = time;
+    break;
+  case WEBKIT_LOAD_COMMITTED:
+    priv->load_commited_time = time;
+    break;
+  case WEBKIT_LOAD_FINISHED:
+    priv->load_finished_time = time;
+    break;
+  case WEBKIT_LOAD_FIRST_VISUALLY_NON_EMPTY_LAYOUT:
+    priv->load_first_visually_non_empty_layout_time = time;
+    break;
+  default:
+    break;
+  }
+}
+
+static void
+on_chrome_frame_resource_request_starting_cb (WebKitWebFrame *frame,
+					      WebKitWebResource *resource,
+					      WebKitNetworkRequest *request,
+					      WebKitNetworkResponse *response,
+					      gpointer user_data)
+{
+  ChromePrivateData *priv = (ChromePrivateData *) user_data;
+  WebKitWebDataSource *data_source;
+  GTimeVal real_time;
+  gdouble time;
+
+  data_source = webkit_web_frame_get_data_source (frame);
+  if (!data_source || resource != webkit_web_data_source_get_main_resource (data_source))
+    return;
+
+  g_get_current_time (&real_time);
+  time = real_time.tv_sec*G_USEC_PER_SEC + real_time.tv_usec;
+  priv->request_time = time;
+}
+
+static void
+on_chrome_web_view_navigation_policy_decision_requested_cb (WebKitWebView *web_view,
+							    WebKitWebFrame *frame,
+							    WebKitNetworkRequest *request,
+							    WebKitWebNavigationAction *navigation_action,
+							    WebKitWebPolicyDecision *policy_decision,
+							    gpointer user_data)
+{
+  ChromePrivateData *priv = (ChromePrivateData *) user_data;
+
+  priv->navigation_reason = webkit_web_navigation_action_get_reason (navigation_action);
+}
+
+static void
+on_frame_finalized (gpointer data,
+		    GObject *obj)
+{
+  ChromePrivateData *priv = (ChromePrivateData *) data;
+
+  priv->frame = NULL;
+  priv->load_status_id = 0;
+  priv->request_starting_id = 0;
+  priv->navigation_requested_id = 0;
+}		    
+
+static void
+chrome_class_finalize (JSObjectRef object)
+{
+  ChromePrivateData *priv = (ChromePrivateData *) JSObjectGetPrivate (object);
+
+  if (priv->frame) {
+    g_signal_handler_disconnect (priv->frame, priv->load_status_id);
+    g_signal_handler_disconnect (priv->frame, priv->request_starting_id);
+    g_signal_handler_disconnect (webkit_web_frame_get_web_view (priv->frame), priv->navigation_requested_id);
+    g_object_weak_unref (G_OBJECT (priv->frame), on_frame_finalized, priv);
+    priv->frame = NULL;
+  }
+}
+
+
+static const JSStaticFunction chrome_class_staticfuncs[] =
+{
+{ "csi", chrome_csi, kJSPropertyAttributeNone },
+{ "loadTimes", chrome_load_times, kJSPropertyAttributeNone },
+{ NULL, NULL, 0 }
+};
+
+static const JSClassDefinition chrome_class_def =
+{
+0,
+kJSClassAttributeNone,
+"EphyChromeClass",
+NULL,
+
+NULL,
+chrome_class_staticfuncs,
+
+NULL,
+chrome_class_finalize,
+
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL,
+NULL
+};
+
+void
+ephy_chrome_apps_setup_js_api (JSGlobalContextRef context,
+			       WebKitWebFrame *frame)
+{
+  WebKitWebView *web_view;
   JSObjectRef global_obj;
   JSValueRef exception = NULL;
 
+  JSClassRef chrome_class;
   JSObjectRef chrome_obj;
+  ChromePrivateData *chrome_private;
 
   JSClassRef chrome_app_class;
   JSObjectRef chrome_app_obj;
@@ -1115,14 +1372,29 @@ ephy_chrome_apps_setup_js_api (JSGlobalContextRef context)
                                EPHY_PREFS_WEB_ENABLE_CHROME_APPS))
     return;
 
+  web_view = webkit_web_frame_get_web_view (frame);
   global_obj = JSContextGetGlobalObject(context);
 
   location = ephy_js_context_get_location (context, &exception);
 
-  chrome_obj = JSObjectMake (context, NULL, NULL);
+  chrome_class = JSClassCreate (&chrome_class_def);
+  chrome_obj = JSObjectMake (context, chrome_class, NULL);
+  chrome_private = g_new0 (ChromePrivateData, 1);
+  JSObjectSetPrivate (chrome_obj, chrome_private);
+  chrome_private->load_status_id = 
+    g_signal_connect (frame, "notify::load-status",
+		      G_CALLBACK (on_chrome_frame_notify_load_status_cb), chrome_private);
+  chrome_private->request_starting_id =
+    g_signal_connect (frame, "resource-request-starting",
+		      G_CALLBACK (on_chrome_frame_resource_request_starting_cb), chrome_private);
+  chrome_private->navigation_requested_id =
+    g_signal_connect (web_view, "navigation-policy-decision-requested",
+		      G_CALLBACK (on_chrome_web_view_navigation_policy_decision_requested_cb), chrome_private);
+  chrome_private->frame = frame;
+  g_object_weak_ref (G_OBJECT (frame), on_frame_finalized, chrome_private);
+  
   ephy_js_object_set_property_from_value (context, global_obj,
                                           "chrome", chrome_obj, &exception);
-
   chrome_app_class = JSClassCreate (&chrome_app_class_def);
   chrome_app_obj = JSObjectMake (context, chrome_app_class, NULL);
   ephy_js_object_set_property_from_value (context, chrome_obj,

@@ -67,6 +67,11 @@ void          ephy_js_object_set_property_from_uint64  (JSContextRef context,
                                                         const char *name,
                                                         guint64 value,
                                                         JSValueRef *exception);
+void          ephy_js_object_set_property_from_double  (JSContextRef context,
+                                                        JSObjectRef obj,
+                                                        const char *name,
+                                                        gdouble value,
+                                                        JSValueRef *exception);
 void          ephy_js_object_set_property_from_boolean (JSContextRef context,
                                                         JSObjectRef obj,
                                                         const char *name,

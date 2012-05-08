@@ -31,13 +31,15 @@
 
 #include <glib.h>
 #include <JavaScriptCore/JavaScript.h>
+#include <webkit/webkit.h>
 
 
 
 G_BEGIN_DECLS
 
 
-void     ephy_chrome_apps_setup_js_api  (JSGlobalContextRef context);
+void     ephy_chrome_apps_setup_js_api  (JSGlobalContextRef context,
+					 WebKitWebFrame *frame);
 
 G_END_DECLS
 
