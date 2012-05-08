@@ -112,32 +112,6 @@ action_activate (GtkAction *action)
     }
     webkit_web_view_go_back (web_view);
     gtk_widget_grab_focus (GTK_WIDGET (embed));
-  } else if (history_action->priv->direction == EPHY_NAVIGATION_HISTORY_DIRECTION_BACK_TO_WEB_APP) {
-    WebKitWebBackForwardList *history;
-    GList *back_list, *node;
-    gboolean found = FALSE;
-
-    history = webkit_web_view_get_back_forward_list (EPHY_GET_WEBKIT_WEB_VIEW_FROM_EMBED (embed));
-    back_list = webkit_web_back_forward_list_get_back_list_with_limit (history, 3);
-    for (node = back_list; node != NULL; node = g_list_next (node)) {
-      WebKitWebHistoryItem *back_item = (WebKitWebHistoryItem *) node->data;
-      SoupURI *soup_uri;
-      
-      soup_uri = soup_uri_new (webkit_web_history_item_get_uri (back_item));
-
-      if (soup_uri && g_strcmp0 (soup_uri->host, ephy_embed_shell_get_app_mode_origin (embed_shell)) == 0) {
-	webkit_web_view_go_to_back_forward_item (web_view, back_item);
-	found = TRUE;
-	break;
-      }
-      if (soup_uri) soup_uri_free (soup_uri);
-    }
-    if (!found) {
-	webkit_web_view_load_uri (web_view, ephy_embed_shell_get_app_mode_launch_uri (embed_shell));
-	webkit_web_back_forward_list_clear (history);
-    }
-    gtk_widget_grab_focus (GTK_WIDGET (embed));
-
   } else if (history_action->priv->direction == EPHY_NAVIGATION_HISTORY_DIRECTION_FORWARD) {
     if (ephy_gui_is_middle_click () ||
         ephy_link_action_get_button (EPHY_LINK_ACTION (history_action)) == 2) {
@@ -608,7 +582,7 @@ popup_history_menu (EphyNavigationHistoryAction *action,
                     ephy_gui_menu_position_under_widget, widget,
                     event->button, event->time);
 
-    return menu;
+     return menu;
 }
 
 static gboolean

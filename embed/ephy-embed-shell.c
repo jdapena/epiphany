@@ -58,8 +58,6 @@ struct _EphyEmbedShellPrivate
 	GtkPrintSettings *print_settings;
 	EphyEmbedShellMode mode;
 	char *app_mode_origin;
-	char *app_mode_launch_uri;
-	char *app_mode_title;
 	guint single_initialised : 1;
 };
 
@@ -78,8 +76,6 @@ enum
 	PROP_0,
 	PROP_MODE,
 	PROP_APP_MODE_ORIGIN,
-	PROP_APP_MODE_LAUNCH_URI,
-	PROP_APP_MODE_TITLE,
 	N_PROPERTIES
 };
 
@@ -276,19 +272,8 @@ ephy_embed_shell_set_property (GObject *object,
 	  embed_shell->priv->mode = g_value_get_enum (value);
 	  break;
   case PROP_APP_MODE_ORIGIN:
-	  if (embed_shell->priv->app_mode_origin)
-		  g_free (embed_shell->priv->app_mode_origin);
+	  g_free (embed_shell->priv->app_mode_origin);
 	  embed_shell->priv->app_mode_origin = g_value_dup_string (value);
-	  break;
-  case PROP_APP_MODE_LAUNCH_URI:
-	  if (embed_shell->priv->app_mode_launch_uri)
-		  g_free (embed_shell->priv->app_mode_launch_uri);
-	  embed_shell->priv->app_mode_launch_uri = g_value_dup_string (value);
-	  break;
-  case PROP_APP_MODE_TITLE:
-	  if (embed_shell->priv->app_mode_title)
-		  g_free (embed_shell->priv->app_mode_title);
-	  embed_shell->priv->app_mode_title = g_value_dup_string (value);
 	  break;
   default:
 	  G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -311,12 +296,6 @@ ephy_embed_shell_get_property (GObject *object,
   case PROP_APP_MODE_ORIGIN:
 	  g_value_set_string (value, embed_shell->priv->app_mode_origin);
 	  break;
-  case PROP_APP_MODE_LAUNCH_URI:
-	  g_value_set_string (value, embed_shell->priv->app_mode_launch_uri);
-	  break;
-  case PROP_APP_MODE_TITLE:
-	  g_value_set_string (value, embed_shell->priv->app_mode_title);
-	  break;
   default:
 	  G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
   }
@@ -333,8 +312,6 @@ ephy_embed_shell_init (EphyEmbedShell *shell)
 
 	shell->priv->downloads = NULL;
 	shell->priv->app_mode_origin = NULL;
-	shell->priv->app_mode_title = NULL;
-	shell->priv->app_mode_launch_uri = NULL;
 }
 
 static void
@@ -364,23 +341,7 @@ ephy_embed_shell_class_init (EphyEmbedShellClass *klass)
 				     "The origin for the application mode .",
 				     NULL,
 				     G_PARAM_READWRITE | G_PARAM_STATIC_NAME | G_PARAM_STATIC_NICK |
-				     G_PARAM_STATIC_BLURB | G_PARAM_CONSTRUCT_ONLY);
-	
-	object_properties[PROP_APP_MODE_TITLE] =
-		g_param_spec_string ("app-mode-title",
-				     "Application mode app name",
-				     "The app name for the application mode .",
-				     NULL,
-				     G_PARAM_READWRITE | G_PARAM_STATIC_NAME | G_PARAM_STATIC_NICK |
-				     G_PARAM_STATIC_BLURB | G_PARAM_CONSTRUCT_ONLY);
-	
-	object_properties[PROP_APP_MODE_LAUNCH_URI] =
-		g_param_spec_string ("app-mode-launch-uri",
-				     "Application mode launch URI",
-				     "The launch URI for the application mode .",
-				     NULL,
-				     G_PARAM_READWRITE | G_PARAM_STATIC_NAME | G_PARAM_STATIC_NICK |
-				     G_PARAM_STATIC_BLURB | G_PARAM_CONSTRUCT_ONLY);
+				     G_PARAM_STATIC_BLURB);
 	
 	g_object_class_install_properties (object_class,
 					   N_PROPERTIES,
@@ -707,28 +668,23 @@ ephy_embed_shell_get_app_mode_origin (EphyEmbedShell *shell)
 }
 
 /**
- * ephy_embed_shell_get_app_mode_launch_uri:
+ * ephy_embed_shell_address_in_web_app_origin:
  * @shell: an #EphyEmbedShell
- * 
- * Returns: the launch URI for app mode if it is set
+ * @address: a URI string
+ *
+ * Returns: %TRUE if @address belongs to the web app origin, %FALSE otherwise
  **/
-const char *
-ephy_embed_shell_get_app_mode_launch_uri (EphyEmbedShell *shell)
+gboolean
+ephy_embed_shell_address_in_web_app_origin (EphyEmbedShell *shell,
+					    const char *address)
 {
-	g_return_val_if_fail (EPHY_IS_EMBED_SHELL (shell), NULL);
-	
-	return shell->priv->app_mode_launch_uri;
-}
-/**
- * ephy_embed_shell_get_app_mode_title:
- * @shell: an #EphyEmbedShell
- * 
- * Returns: the title  for app mode if it is set
- **/
-const char *
-ephy_embed_shell_get_app_mode_title (EphyEmbedShell *shell)
-{
-	g_return_val_if_fail (EPHY_IS_EMBED_SHELL (shell), NULL);
-	
-	return shell->priv->app_mode_title;
+	gboolean result = FALSE;
+	SoupURI *address_uri = soup_uri_new (address);
+
+	if (address_uri) {
+		result = !g_strcmp0 (address_uri->host, shell->priv->app_mode_origin);
+		soup_uri_free (address_uri);
+	}
+
+	return result;
 }

@@ -41,7 +41,6 @@ typedef enum
 {
   EPHY_NAVIGATION_HISTORY_DIRECTION_BACK,
   EPHY_NAVIGATION_HISTORY_DIRECTION_FORWARD,
-  EPHY_NAVIGATION_HISTORY_DIRECTION_BACK_TO_WEB_APP
 } EphyNavigationHistoryDirection;
 
 typedef struct _EphyNavigationHistoryAction		EphyNavigationHistoryAction;

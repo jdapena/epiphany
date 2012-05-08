@@ -125,10 +125,17 @@ queue_commands (EphyShell *shell)
 
   /* We only get here when starting a new instance, so autoresume the
    * session unless we are in application mode. */
-  if (ephy_embed_shell_get_mode (EPHY_EMBED_SHELL (shell)) != EPHY_EMBED_SHELL_MODE_APPLICATION)
+  if (ephy_embed_shell_get_mode (EPHY_EMBED_SHELL (shell)) == EPHY_EMBED_SHELL_MODE_APPLICATION) {
+    SoupURI *app_uri = soup_uri_new (ctx->arguments[0]);
+    g_object_set (shell,
+                  "app-mode-origin", app_uri->host,
+                  NULL);
+    soup_uri_free (app_uri);
+  } else {
     ephy_session_queue_command (session,
                                 EPHY_SESSION_CMD_RESUME_SESSION,
                                 NULL, NULL, ctx->user_time, TRUE);
+  }
 
   if (ctx->startup_flags & EPHY_STARTUP_BOOKMARKS_EDITOR)
     ephy_session_queue_command (session,
@@ -720,6 +727,7 @@ ephy_shell_new_tab_full (EphyShell *shell,
   gboolean copy_history = TRUE;
   gboolean is_empty = FALSE;
   int position = -1;
+  EphyEmbedShellMode mode;
 
   if (flags & EPHY_NEW_TAB_OPEN_PAGE) open_page = TRUE;
   if (flags & EPHY_NEW_TAB_IN_NEW_WINDOW) in_new_window = TRUE;
@@ -727,9 +735,11 @@ ephy_shell_new_tab_full (EphyShell *shell,
   if (flags & EPHY_NEW_TAB_DONT_COPY_HISTORY) copy_history = FALSE;
   if (flags & EPHY_NEW_TAB_JUMP) jump_to = TRUE;
 
+  mode = ephy_embed_shell_get_mode (EPHY_EMBED_SHELL (shell));
   fullscreen_lockdown = g_settings_get_boolean (EPHY_SETTINGS_LOCKDOWN,
                                                 EPHY_PREFS_LOCKDOWN_FULLSCREEN);
-  in_new_window = in_new_window && !fullscreen_lockdown;
+  in_new_window = in_new_window && (!fullscreen_lockdown || mode == EPHY_EMBED_SHELL_MODE_APPLICATION);
+
   g_return_val_if_fail (open_page == (gboolean)(request != NULL), NULL);
 
   LOG ("Opening new tab parent-window %p parent-embed %p in-new-window:%s jump-to:%s",
@@ -1085,25 +1095,6 @@ _ephy_shell_create_instance (EphyEmbedShellMode mode)
   ephy_shell = EPHY_SHELL (g_object_new (EPHY_TYPE_SHELL,
                                          "application-id", "org.gnome.Epiphany",
                                          "mode", mode,
-                                         NULL));
-  /* FIXME weak ref */
-  g_assert (ephy_shell != NULL);
-}
-
-void
-_ephy_shell_create_web_application_instance (EphyEmbedShellMode mode,
-                                             const char *origin,
-                                             const char *launch_uri,
-                                             const char *title)
-{
-  g_assert (ephy_shell == NULL);
-
-  ephy_shell = EPHY_SHELL (g_object_new (EPHY_TYPE_SHELL,
-                                         "application-id", "org.gnome.Epiphany",
-                                         "mode", mode,
-                                         "app-mode-origin", origin,
-                                         "app-mode-title", title,
-                                         "app-mode-launch-uri", launch_uri,
                                          NULL));
   /* FIXME weak ref */
   g_assert (ephy_shell != NULL);

@@ -109,8 +109,8 @@ void		   ephy_embed_shell_remove_download	(EphyEmbedShell *shell,
 
 EphyEmbedShellMode ephy_embed_shell_get_mode            (EphyEmbedShell *shell);
 const char *       ephy_embed_shell_get_app_mode_origin (EphyEmbedShell *shell);
-const char *       ephy_embed_shell_get_app_mode_launch_uri (EphyEmbedShell *shell);
-const char *       ephy_embed_shell_get_app_mode_title  (EphyEmbedShell *shell);
+gboolean           ephy_embed_shell_address_in_web_app_origin (EphyEmbedShell *shell,
+							       const char *address);
 
 G_END_DECLS
 

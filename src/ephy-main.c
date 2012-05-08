@@ -457,16 +457,12 @@ main (int argc,
   /* Now create the shell */
   if (private_instance) {
     mode = EPHY_EMBED_SHELL_MODE_PRIVATE;
-    _ephy_shell_create_instance (mode);
   } else if (application_mode) {
     char *profile_directory_basename, *profile_directory_basename_no_prefix,
       *desktop_file, *desktop_file_path;
     char *app_name = NULL;
     char *app_icon;
-    char *app_mode_origin;
     char *contents;
-
-    SoupURI *soup_uri;
 
     mode = EPHY_EMBED_SHELL_MODE_APPLICATION;
 
@@ -503,15 +499,6 @@ main (int argc,
     g_free (desktop_file_path);
     g_free (app_icon);
 
-    soup_uri = soup_uri_new (arguments[0]);
-    app_mode_origin = g_strdup (soup_uri->host);
-    soup_uri_free (soup_uri);
-
-    _ephy_shell_create_web_application_instance (mode,
-                                                 app_mode_origin,
-                                                 arguments[0],
-                                                 app_name);
-    g_free (app_mode_origin);
   } else {
     mode = EPHY_EMBED_SHELL_MODE_BROWSER;
 
@@ -520,8 +507,8 @@ main (int argc,
 
     gtk_window_set_default_icon_name ("web-browser");
 
-    _ephy_shell_create_instance (mode);
   }
+  _ephy_shell_create_instance (mode);
 
   startup_flags = get_startup_flags ();
   ctx = ephy_shell_startup_context_new (startup_flags,

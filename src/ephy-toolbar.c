@@ -112,14 +112,10 @@ ephy_toolbar_constructed (GObject *object)
   back_to_application_pixbuf = gdk_pixbuf_new_from_file_at_size (app_icon_filename,
                                                                  icon_width, icon_height,
                                                                  NULL);
-  if (back_to_application_pixbuf) {
-    back_to_application_icon = gtk_image_new_from_pixbuf (back_to_application_pixbuf);
-    g_object_unref (back_to_application_pixbuf);
-  } else {
-    back_to_application_icon = gtk_image_new_from_stock ("web", GTK_ICON_SIZE_BUTTON);
-  }
+  back_to_application_icon = gtk_image_new_from_pixbuf (back_to_application_pixbuf);
+  g_object_unref (back_to_application_pixbuf);
   g_free (app_icon_filename);
-  back_to_app = gtk_tool_button_new (back_to_application_icon, "Hola");
+  back_to_app = gtk_tool_button_new (back_to_application_icon, NULL);
   gtk_tool_item_set_is_important (back_to_app, TRUE);
 
   action_group = ephy_window_get_toolbar_action_group (priv->window);
@@ -267,7 +263,6 @@ ephy_toolbar_new (EphyWindow *window)
 
     return GTK_WIDGET (g_object_new (EPHY_TYPE_TOOLBAR,
                                      "window", window,
-                                     "toolbar-style", GTK_TOOLBAR_BOTH_HORIZ,
                                      NULL));
 }
 

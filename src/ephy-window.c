@@ -24,6 +24,7 @@
 #include "ephy-window.h"
 
 #include "ephy-action-helper.h"
+#include "ephy-back-to-web-app-action.h"
 #include "ephy-bookmarks-ui.h"
 #include "ephy-combined-stop-reload-action.h"
 #include "ephy-debug.h"
@@ -173,7 +174,6 @@ static const GtkActionEntry ephy_menu_entries [] = {
 	  G_CALLBACK (window_cmd_tabs_move_right) },
         { "TabsDetach", NULL, N_("_Detach Tab"), NULL, NULL,
           G_CALLBACK (window_cmd_tabs_detach) },
-
 };
 
 static const GtkToggleActionEntry ephy_menu_toggle_entries [] =
@@ -1405,13 +1405,12 @@ setup_ui_manager (EphyWindow *window)
 
 	action_group = gtk_action_group_new ("SpecialToolbarActions");
 	action =
-		g_object_new (EPHY_TYPE_NAVIGATION_HISTORY_ACTION,
+		g_object_new (EPHY_TYPE_BACK_TO_WEB_APP_ACTION,
 			      "name", "NavigationBackToApplication",
 			      "label", _("Back to application"),
 			      "icon-name", "go-previous-symbolic",
 			      "is-important", TRUE,
 			      "window", window,
-			      "direction", EPHY_NAVIGATION_HISTORY_DIRECTION_BACK_TO_WEB_APP,
 			      NULL);
 	gtk_action_group_add_action (action_group, action);
 	g_object_unref (action);
@@ -1446,7 +1445,7 @@ setup_ui_manager (EphyWindow *window)
 			      "label", _("Open as Web page"),
 			      "window", window,
 			      NULL);
-	g_signal_connect (G_OBJECT (action),
+	g_signal_connect (action,
 			  "activate",
 			  G_CALLBACK (window_cmd_open_in_browser),
 			  window);
@@ -2236,8 +2235,12 @@ create_web_view_cb (WebKitWebView *web_view,
 	WebKitWebView *new_web_view;
 	EphyNewTabFlags flags;
 	EphyWindow *parent_window;
+	EphyEmbedShellMode mode;
 
-	if (g_settings_get_boolean (EPHY_SETTINGS_MAIN,
+	mode = ephy_embed_shell_get_mode (embed_shell);
+
+	if (mode != EPHY_EMBED_SHELL_MODE_APPLICATION &&
+	    g_settings_get_boolean (EPHY_SETTINGS_MAIN,
 				    EPHY_PREFS_NEW_WINDOWS_IN_TABS))
 	{
 		parent_window = window;
@@ -2432,11 +2435,25 @@ policy_decision_required_cb (WebKitWebView *web_view,
 	gint button;
 	gint state;
 	const char *uri;
+	const char *target_frame;
 
 	reason = webkit_web_navigation_action_get_reason (action);
 	button = webkit_web_navigation_action_get_button (action);
 	state = webkit_web_navigation_action_get_modifier_state (action);
+	target_frame = webkit_web_navigation_action_get_target_frame (action);
 	uri = webkit_network_request_get_uri (request);
+
+	if (ephy_embed_shell_get_mode (embed_shell) == EPHY_EMBED_SHELL_MODE_APPLICATION)
+	{
+		if (target_frame != NULL &&
+		    !ephy_embed_shell_address_in_web_app_origin (embed_shell, uri))
+		{
+			ephy_file_launch_in_browser (uri);
+			webkit_web_policy_decision_ignore (decision);
+			
+			return TRUE;
+		}
+	}
 
 	if (!ephy_embed_utils_address_has_web_scheme (uri))
 	{
@@ -3677,7 +3694,7 @@ ephy_window_constructor (GType type,
 	if (mode == EPHY_EMBED_SHELL_MODE_APPLICATION)
 	{
 		action = gtk_action_group_get_action (priv->toolbar_action_group, "NavigationBackToApplication");
-		gtk_action_set_label (action, ephy_embed_shell_get_app_mode_title (embed_shell));
+		gtk_action_set_label (action, g_get_application_name ());
 
 		/* FileNewTab and FileNewWindow are sort of special. */
 		action = gtk_action_group_get_action (toolbar_action_group, "FileNewTab");

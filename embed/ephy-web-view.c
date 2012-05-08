@@ -83,6 +83,7 @@ struct _EphyWebViewPrivate {
 
   char *address;
   char *typed_address;
+  char *last_web_app_address;
   char *title;
   char *loading_title;
   char *status_message;
@@ -117,6 +118,7 @@ typedef struct {
 enum {
   PROP_0,
   PROP_ADDRESS,
+  PROP_LAST_WEB_APP_ADDRESS,
   PROP_DOCUMENT_TYPE,
   PROP_HIDDEN_POPUP_COUNT,
   PROP_ICON,
@@ -410,6 +412,9 @@ ephy_web_view_get_property (GObject *object,
     case PROP_ADDRESS:
       g_value_set_string (value, priv->address);
       break;
+    case PROP_LAST_WEB_APP_ADDRESS:
+      g_value_set_string (value, priv->last_web_app_address);
+      break;
     case PROP_EMBED_TITLE:
       g_value_set_string (value, priv->title);
       break;
@@ -468,6 +473,7 @@ ephy_web_view_set_property (GObject *object,
       break;
       break;
     case PROP_ADDRESS:
+    case PROP_LAST_WEB_APP_ADDRESS:
     case PROP_DOCUMENT_TYPE:
     case PROP_HIDDEN_POPUP_COUNT:
     case PROP_ICON:
@@ -1093,6 +1099,7 @@ ephy_web_view_finalize (GObject *object)
   ephy_web_view_popups_manager_reset (EPHY_WEB_VIEW (object));
 
   g_free (priv->address);
+  g_free (priv->last_web_app_address);
   g_free (priv->typed_address);
   g_free (priv->title);
   g_free (priv->status_message);
@@ -1206,6 +1213,14 @@ ephy_web_view_set_address (EphyWebView *view,
   if (ephy_web_view_is_loading (view) && priv->typed_address != NULL)
     ephy_web_view_set_typed_address (view, NULL);
 
+  if (ephy_embed_shell_get_mode (embed_shell) == EPHY_EMBED_SHELL_MODE_APPLICATION) {
+    if (ephy_embed_shell_address_in_web_app_origin (embed_shell, address)) {
+      g_free (priv->last_web_app_address);
+      priv->last_web_app_address = g_strdup (address);
+      g_object_notify (object, "last-web-app-address");
+    }
+  }
+
   g_object_notify (object, "address");
 }
 
@@ -1309,6 +1324,19 @@ ephy_web_view_class_init (EphyWebViewClass *klass)
                                    g_param_spec_string ("address",
                                                         "Address",
                                                         "The view's address",
+                                                        "",
+                                                        G_PARAM_READABLE | G_PARAM_STATIC_NAME | G_PARAM_STATIC_NICK | G_PARAM_STATIC_BLURB));
+
+/**
+ * EphyWebView:last-web-app-address:
+ *
+ * View's last address matching web application origin.
+ **/
+  g_object_class_install_property (gobject_class,
+                                   PROP_ADDRESS,
+                                   g_param_spec_string ("last-web-app-address",
+                                                        "Last web app address",
+                                                        "The view's last address matching application origin",
                                                         "",
                                                         G_PARAM_READABLE | G_PARAM_STATIC_NAME | G_PARAM_STATIC_NICK | G_PARAM_STATIC_BLURB));
 
@@ -3138,6 +3166,21 @@ ephy_web_view_get_address (EphyWebView *view)
 {
   EphyWebViewPrivate *priv = view->priv;
   return priv->address ? priv->address : "about:blank";
+}
+
+/**
+ * ephy_web_view_get_last_web_app_address:
+ * @view: an #EphyWebView
+ *
+ * Returns the last address loaded belonging to web application origin.
+ *
+ * Return value: an address.
+ **/
+const char *
+ephy_web_view_get_last_web_app_address (EphyWebView *view)
+{
+  EphyWebViewPrivate *priv = view->priv;
+  return priv->last_web_app_address;
 }
 
 /**

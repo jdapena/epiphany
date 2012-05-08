@@ -18,6 +18,7 @@ header_DATA = \
 
 NOINST_H_FILES = \
 	ephy-action-helper.h			\
+	ephy-back-to-web-app-action.h		\
 	ephy-combined-stop-reload-action.h	\
 	ephy-encoding-dialog.h			\
 	ephy-encoding-menu.h			\
@@ -52,6 +53,7 @@ INST_H_FILES = \
 
 libephymain_la_SOURCES = \
 	ephy-action-helper.c			\
+	ephy-back-to-web-app-action.c		\
 	ephy-completion-model.c			\
 	ephy-completion-model.h			\
 	ephy-combined-stop-reload-action.c	\
