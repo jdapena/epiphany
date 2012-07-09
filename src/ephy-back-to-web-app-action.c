@@ -39,17 +39,51 @@ action_activate (GtkAction *action)
   EphyWindow *window;
   EphyEmbed *embed;
   WebKitWebView *web_view;
-  const char *last_app_uri;
+#ifdef HAVE_WEBKIT2
+  WebKitBackForwardList *history;
+  WebKitBackForwardListItem *back_item;
+#else
+  WebKitWebHistoryItem *back_item;
+  WebKitWebBackForwardList *history;
+#endif
+  GList *items, *node;
 
   window = ephy_window_action_get_window (EPHY_WINDOW_ACTION (action));
   embed = ephy_embed_container_get_active_child (EPHY_EMBED_CONTAINER (window));
   g_return_if_fail (embed != NULL);
 
   web_view = EPHY_GET_WEBKIT_WEB_VIEW_FROM_EMBED (embed);
+  history = webkit_web_view_get_back_forward_list (web_view);
 
-  last_app_uri = ephy_web_view_get_last_web_app_address (EPHY_WEB_VIEW (web_view));
+#ifdef HAVE_WEBKIT2
+  items = webkit_back_forward_list_get_back_list (history);
+  node = items;
+  while (node != NULL) {
+    if (ephy_embed_shell_address_in_web_app_origin (ephy_embed_shell_get_default (),
+                                                    webkit_back_forward_list_item_get_uri (back_item))) {
+      webkit_web_view_go_to_back_forward_list_item (web_view,
+                                                    back_item);
+      break;
+    } else {
+      node = g_list_next (node);
+    }
+  }
+#else
+  items = webkit_web_back_forward_list_get_back_list_with_limit (history, G_MAXINT);
+  node = items;
+  while (node != NULL) {
+    back_item = (WebKitWebHistoryItem *) node->data;
+    if (ephy_embed_shell_address_in_web_app_origin (ephy_embed_shell_get_default (),
+                                                    webkit_web_history_item_get_uri (back_item))) {
+      webkit_web_view_go_to_back_forward_item (web_view,
+                                               back_item);
+      break;
+    } else {
+      node = g_list_next (node);
+    }
+  }
+#endif
 
-  webkit_web_view_load_uri (web_view, last_app_uri);
   gtk_widget_grab_focus (GTK_WIDGET (embed));
 
 }
