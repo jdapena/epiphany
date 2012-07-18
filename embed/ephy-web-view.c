@@ -812,7 +812,120 @@ should_store_cb (GnomeKeyringResult retval,
 }
 
 #ifdef HAVE_WEBKIT2
-/* TODO: DOM bindings */
+
+typedef struct {
+  WebKitWebView *web_view;
+  char *form_username;
+  char *form_password;
+} FillFormData;
+
+static void
+fill_form_data_free (FillFormData *d)
+{
+  g_object_unref (d->web_view);
+  g_free (d->form_username);
+  g_free (d->form_password);
+
+  g_free (d);
+}
+
+static void
+query_form_auth_data_cb (GnomeKeyringResult retval,
+                         GList *results,
+                         gpointer userdata)
+{
+  FillFormData *fill_data = (FillFormData*)userdata;
+  GString *login_data;
+  GList *r;
+  gboolean first_done = FALSE;
+
+  if (!results) {
+    LOG ("No result");
+    return;
+  }
+
+  if (retval != GNOME_KEYRING_RESULT_OK) {
+    LOG ("Query failed.");
+    return;
+  }
+
+  login_data = g_string_new ("epiphany.forms.fill_forms([");
+  for (r = results; r; r = r->next) {
+    GnomeKeyringNetworkPasswordData* keyring_data = r->data;
+    if (first_done)
+      g_string_append (login_data, ",");
+    else
+      first_done = TRUE;
+
+    g_string_append_printf (login_data,
+                            "{user_name: '%s',password_name: '%s',user_value: '%s',password_value: '%s'}",
+                            fill_data->form_username, fill_data->form_password,
+                            keyring_data->user, keyring_data->password);
+  }
+  g_string_append (login_data, "])");
+
+  webkit_web_view_run_javascript (WEBKIT_WEB_VIEW (fill_data->web_view), login_data->str, NULL, NULL, NULL);
+  g_string_free (login_data, TRUE);
+}
+
+static void
+prefill_script_cb (GObject *source_object,
+                   GAsyncResult *res,
+                   gpointer userdata)
+{
+  WebKitWebView *web_view = (WebKitWebView *) source_object;
+  WebKitJavascriptResult *js_result;
+  GError *error = NULL;
+  SoupURI *uri;
+
+  js_result = webkit_web_view_run_javascript_finish (web_view, res, &error);
+  if (!js_result) {
+    g_warning ("Failed to load prefill script: %s", error->message);
+    g_error_free (error);
+    return;
+  }
+  webkit_javascript_result_unref (js_result);
+
+  uri = soup_uri_new (webkit_web_view_get_uri (WEBKIT_WEB_VIEW (web_view)));
+
+  if (uri) {
+    char *uri_str;
+    GSList *form_data_list = NULL, *n;
+
+    form_data_list = ephy_embed_single_get_form_auth (EPHY_EMBED_SINGLE (ephy_embed_shell_get_embed_single (embed_shell)), uri->host);
+    uri_str = soup_uri_to_string (uri, FALSE);
+
+    for (n = form_data_list; n; n = n->next) {
+      EphyEmbedSingleFormAuthData *data = (EphyEmbedSingleFormAuthData*)n->data;
+      FillFormData *fill_form_data = g_new0 (FillFormData, 1);
+      fill_form_data->web_view = g_object_ref (web_view);
+      fill_form_data->form_username = g_strdup (data->form_username);
+      fill_form_data->form_password = g_strdup (data->form_password);
+    
+      _ephy_profile_utils_query_form_auth_data (uri_str,
+                                                data->form_username,
+                                                data->form_password,
+                                                query_form_auth_data_cb,
+                                                fill_form_data,
+                                                (GDestroyNotify) fill_form_data_free);
+    }
+    g_free (uri_str);
+  }
+}
+
+static void
+_ephy_web_view_fill_forms (EphyWebView *web_view)
+{
+  static char *prefill_script = NULL;
+
+  if (!prefill_script) {
+    g_file_get_contents (SHARE_DIR"/js/prefill.js", &prefill_script, NULL, NULL);
+  }
+  g_return_if_fail (prefill_script);
+
+  webkit_web_view_run_javascript (WEBKIT_WEB_VIEW (web_view), prefill_script,
+                                  NULL, prefill_script_cb, web_view);
+}
 #else
 static gboolean
 form_submitted_cb (WebKitDOMHTMLFormElement *dom_form,
@@ -2192,13 +2305,14 @@ load_changed_cb (WebKitWebView *web_view,
     if (priv->is_blank)
       g_object_notify (object, "embed-title");
 
-#if 0
     /* TODO: DOM bindings */
     if (ephy_embed_shell_get_mode (embed_shell) != EPHY_EMBED_SHELL_MODE_PRIVATE &&
         g_settings_get_boolean (EPHY_SETTINGS_MAIN,
-                                EPHY_PREFS_REMEMBER_PASSWORDS))
-      _ephy_web_view_hook_into_forms (view);
+                                EPHY_PREFS_REMEMBER_PASSWORDS)) {
+      _ephy_web_view_fill_forms (view);
+    }
 
+#if 0
     _ephy_web_view_hook_into_links (view);
 #endif
 
